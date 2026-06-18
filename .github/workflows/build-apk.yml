@@ -1,0 +1,45 @@
+name: Build Griya APK
+
+on:
+  push:
+    branches:
+      - main # Jalankan otomatis setiap kali kamu push ke branch main
+  workflow_dispatch: # Memunculkan tombol "Run workflow" manual di web GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Menggunakan server Linux gratis (Hemat kuota)
+
+    steps:
+      # 1. Ambil kode sumber dari repositori GitHub
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Siapkan lingkungan Java JDK versi 17 (Standar Flutter modern)
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      # 3. Siapkan Flutter SDK (Menggunakan versi stabil)
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+
+      # 4. Ambil semua dependensi pubspec.yaml (Firebase, dll)
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # 5. Proses perakitan APK Debug (Bypass seccomp/AAPT2 Termux karena ini di server asli)
+      - name: Build APK Debug
+        run: flutter build apk --debug
+
+      # 6. Unggah hasil APK ke server agar bisa diunduh langsung di HP
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: griya-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error

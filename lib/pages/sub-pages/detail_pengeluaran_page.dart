@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// Arsitektur Enum Modern untuk kejelasan status data halaman modul finansial
 enum PengeluaranMode { add, view, edit }
 
 class DetailPengeluaranPage extends StatefulWidget {
@@ -20,18 +19,13 @@ class DetailPengeluaranPage extends StatefulWidget {
 
 class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
     final _formKey = GlobalKey<FormState>();
-
-    // State dinamis internal berbasis enum
     late PengeluaranMode _currentMode;
 
-    final Color _bgColor = const Color(0xFFF8F9FA);
-    final Color _cardColor = const Color(0xFFFFFFFF);
-    final Color _primaryColor = const Color(0xFF1A73E8);
-    final Color _accentColor = const Color(0xFF059669); 
-    final Color _textPrimary = const Color(0xFF202124);
-    final Color _textSecondary = const Color(0xFF5F7A90);
-    final Color _borderColor = const Color(0xFFE8EAED);
-    final Color _errorColor = const Color(0xFFEA4335);
+    final Color _tealPrimary = const Color(0xFF0F766E);
+    final Color _textSlatePrimary = const Color(0xFF0F172A);
+    final Color _textSlateMuted = const Color(0xFF64748B);
+    final Color _borderSlateLight = const Color(0xFFCFD8DC);
+    final Color _errorColor = const Color(0xFFEF4444);
 
     final TextEditingController _namaController = TextEditingController();
     final TextEditingController _nominalController = TextEditingController();
@@ -39,9 +33,11 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
     final TextEditingController _tokoController = TextEditingController();
     final TextEditingController _notaController = TextEditingController();
     final TextEditingController _catatanController = TextEditingController();
+    final TextEditingController _kategoriBaruController = TextEditingController(); 
 
     String? _selectedKategori;
     bool _hasReceiptPhoto = false;
+    bool _isKategoriLainnyaSelected = false; 
 
     final List<String> _daftarKategori = [
         'Perawatan Bangunan',
@@ -51,7 +47,6 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
         'Lainnya'
     ];
 
-    // Helper getter status read-only untuk mempersingkat sintaksis form
     bool get _isReadOnly => _currentMode == PengeluaranMode.view;
 
     @override
@@ -73,6 +68,14 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
             final String? kat = widget.pengeluaran!['kategori'];
             if (_daftarKategori.contains(kat)) {
                 _selectedKategori = kat;
+                if (kat == 'Lainnya') {
+                    _isKategoriLainnyaSelected = true;
+                    _kategoriBaruController.text = widget.pengeluaran!['kategori_kustom'] ?? '';
+                }
+            } else if (kat != null && kat.isNotEmpty) {
+                _selectedKategori = 'Lainnya';
+                _isKategoriLainnyaSelected = true;
+                _kategoriBaruController.text = kat;
             }
             _hasReceiptPhoto = widget.pengeluaran!['has_nota'] ?? false;
         }
@@ -86,6 +89,7 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
         _tokoController.dispose();
         _notaController.dispose();
         _catatanController.dispose();
+        _kategoriBaruController.dispose();
         super.dispose();
     }
 
@@ -96,13 +100,17 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
             initialDate: DateTime.now(),
             firstDate: DateTime(2020),
             lastDate: DateTime(2030),
+            locale: const Locale('id', 'ID'), 
+            confirmText: 'PILIH',
+            cancelText: 'BATAL',
+            helpText: 'PILIH TANGGAL NOTA',
             builder: (context, child) {
                 return Theme(
                     data: Theme.of(context).copyWith(
                         colorScheme: ColorScheme.light(
-                            primary: _primaryColor,
-                            onPrimary: _cardColor,
-                            onSurface: _textPrimary,
+                            primary: _tealPrimary,
+                            onPrimary: Colors.white,
+                            onSurface: _textSlatePrimary,
                         ),
                     ),
                     child: child!,
@@ -128,8 +136,8 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: const Text('Foto nota berhasil dilampirkan (Simulasi)'),
-                backgroundColor: _accentColor,
+                content: const Text('Foto nota berhasil dilampirkan'),
+                backgroundColor: _tealPrimary,
                 duration: const Duration(seconds: 2),
             ),
         );
@@ -142,14 +150,16 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
             });
         } else {
             if (_formKey.currentState!.validate()) {
+                final String kategoriFinal = _isKategoriLainnyaSelected ? _kategoriBaruController.text.trim() : _selectedKategori!;
+
                 final String pesanSukses = _currentMode == PengeluaranMode.add
                         ? 'Data pengeluaran berhasil ditambahkan'
-                        : 'Perubahan data pengeluaran berhasil disimpan';
+                        : 'Perubahan data pengeluaran disimpan';
 
                 ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                        content: Text(pesanSukses),
-                        backgroundColor: _accentColor,
+                        content: Text('$pesanSukses ($kategoriFinal)'),
+                        backgroundColor: _tealPrimary,
                     ),
                 );
                 Navigator.pop(context);
@@ -167,25 +177,24 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
         }
 
         return Scaffold(
-            backgroundColor: _bgColor,
+            backgroundColor: const Color(0xFFECEFF1), 
             appBar: AppBar(
-                backgroundColor: _cardColor,
+                backgroundColor: Colors.white,
                 elevation: 0,
                 scrolledUnderElevation: 0,
                 leading: IconButton(
-                    icon: Icon(Icons.arrow_back_ios_new, color: _textPrimary, size: 20),
+                    icon: Icon(Icons.arrow_back_ios_new_rounded, color: _textSlatePrimary, size: 18),
                     onPressed: () => Navigator.pop(context),
                 ),
                 title: Text(
                     appBarTitle,
-                    style: TextStyle(
-                        color: _textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.5,
-                    ),
+                    style: TextStyle(color: _textSlatePrimary, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                shape: Border(bottom: BorderSide(color: _borderColor, width: 1)),
+                centerTitle: true,
+                bottom: const PreferredSize(
+                    preferredSize: Size.fromHeight(1),
+                    child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+                ),
             ),
             body: SafeArea(
                 child: Column(
@@ -194,14 +203,110 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
                             child: Form(
                                 key: _formKey,
                                 child: ListView(
-                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                                    physics: const ClampingScrollPhysics(),
+                                    padding: const EdgeInsets.all(24),
+                                    physics: const AlwaysScrollableScrollPhysics(),
                                     children: [
-                                        _buildInformasiPengeluaranSection(),
+                                        _buildCardWrapper(
+                                            child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                    const Text('Informasi Utama', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                    const SizedBox(height: 16),
+                                                    _buildTextField(
+                                                        controller: _namaController,
+                                                        label: 'Nama Pengeluaran',
+                                                        hint: 'Contoh: Perbaikan Atap Kamar 102',
+                                                        isMandatory: true,
+                                                        validator: (val) => val == null || val.trim().isEmpty ? 'Nama pengeluaran wajib diisi' : null,
+                                                    ),
+                                                    const SizedBox(height: 16),
+                                                    _buildTextField(
+                                                        controller: _nominalController,
+                                                        label: 'Nominal Biaya',
+                                                        hint: '0',
+                                                        isMandatory: true,
+                                                        keyboardType: TextInputType.number,
+                                                        prefix: Padding(
+                                                            padding: const EdgeInsets.only(right: 8.0),
+                                                            child: Text('Rp', style: TextStyle(color: _textSlatePrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+                                                        ),
+                                                        inputFormatters: [_CurrencyFormatFormatter()],
+                                                        validator: (val) => val == null || val.isEmpty ? 'Nominal wajib diisi' : null,
+                                                    ),
+                                                    const SizedBox(height: 16),
+                                                    _buildTanggalField(),
+                                                    const SizedBox(height: 16),
+                                                    _buildDropdownField(
+                                                        label: 'Kategori Pengeluaran',
+                                                        hint: 'Pilih kategori',
+                                                        value: _selectedKategori,
+                                                        items: _daftarKategori,
+                                                        isMandatory: true,
+                                                        validator: (val) => val == null ? 'Kategori wajib dipilih' : null,
+                                                        onChanged: (val) {
+                                                            setState(() {
+                                                                _selectedKategori = val;
+                                                                _isKategoriLainnyaSelected = (val == 'Lainnya');
+                                                            });
+                                                        },
+                                                    ),
+                                                    if (_isKategoriLainnyaSelected) ...[
+                                                        const SizedBox(height: 16),
+                                                        _buildTextField(
+                                                            controller: _kategoriBaruController,
+                                                            label: 'Nama Kategori Baru',
+                                                            hint: 'Contoh: Pajak Bumi Bangunan',
+                                                            isMandatory: true,
+                                                            validator: (val) => val == null || val.trim().isEmpty ? 'Nama kategori baru wajib diisi' : null,
+                                                        ),
+                                                    ],
+                                                ],
+                                            ),
+                                        ),
                                         const SizedBox(height: 16),
-                                        _buildDetailTambahanSection(),
+
+                                        _buildCardWrapper(
+                                            child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                    const Text('Detail Tambahan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                    const SizedBox(height: 16),
+                                                    _buildTextField(
+                                                        controller: _tokoController,
+                                                        label: 'Nama Toko / Vendor',
+                                                        hint: 'Contoh: TB Sinar Maju',
+                                                        isMandatory: false,
+                                                    ),
+                                                    const SizedBox(height: 16),
+                                                    _buildTextField(
+                                                        controller: _notaController,
+                                                        label: 'Nomor Nota Fisik',
+                                                        hint: 'Contoh: INV-98742',
+                                                        isMandatory: false,
+                                                    ),
+                                                    const SizedBox(height: 16),
+                                                    _buildTextField(
+                                                        controller: _catatanController,
+                                                        label: 'Catatan Keterangan',
+                                                        hint: 'Masukkan keterangan tambahan jika ada...',
+                                                        isMandatory: false,
+                                                        maxLines: 3,
+                                                    ),
+                                                ],
+                                            ),
+                                        ),
                                         const SizedBox(height: 16),
-                                        _buildBuktiPengeluaranSection(),
+
+                                        _buildCardWrapper(
+                                            child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                    const Text('Bukti Pembelian', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                    const SizedBox(height: 14),
+                                                    _buildBuktiPengeluaranContent(),
+                                                ],
+                                            ),
+                                        ),
                                     ],
                                 ),
                             ),
@@ -213,229 +318,127 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
         );
     }
 
-    Widget _buildInformasiPengeluaranSection() {
-        return _buildAccordionCard(
-            title: 'Informasi Pengeluaran',
-            initiallyExpanded: true,
-            icon: Icons.receipt_long_outlined,
-            children: [
-                _buildTextField(
-                    controller: _namaController,
-                    label: 'Nama Pengeluaran',
-                    hint: 'Contoh: Perbaikan Atap Kamar 102',
-                    isMandatory: true,
-                    validator: (val) => val == null || val.trim().isEmpty ? 'Nama pengeluaran wajib diisi' : null,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                    controller: _nominalController,
-                    label: 'Nominal',
-                    hint: '0',
-                    isMandatory: true,
-                    keyboardType: TextInputType.number,
-                    prefixIcon: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('Rp', style: TextStyle(color: _textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-                    ),
-                    inputFormatters: [_CurrencyFormatFormatter()],
-                    validator: (val) => val == null || val.isEmpty ? 'Nominal wajib diisi' : null,
-                ),
-                const SizedBox(height: 16),
-                Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                        Row(
-                            children: [
-                                Text('Tanggal', style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                                Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.w600)),
-                            ],
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                            controller: _tanggalController,
-                            readOnly: true,
-                            onTap: _selectTanggal,
-                            validator: (val) => val == null || val.isEmpty ? 'Tanggal wajib diisi' : null,
-                            style: TextStyle(color: _isReadOnly ? _textSecondary : _textPrimary, fontSize: 15),
-                            decoration: InputDecoration(
-                                hintText: 'Pilih Tanggal Pengeluaran',
-                                hintStyle: TextStyle(color: _textSecondary.withOpacity(0.5), fontSize: 14),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                fillColor: _isReadOnly ? _bgColor : _cardColor,
-                                filled: true,
-                                suffixIcon: Icon(Icons.calendar_today_outlined, size: 18, color: _textSecondary),
-                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor, width: 1)),
-                                disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor.withOpacity(0.6), width: 1)),
-                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
-                                errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
-                                focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
-                            ),
-                        ),
-                    ],
-                ),
-                const SizedBox(height: 16),
-                _buildDropdownField(
-                    label: 'Kategori',
-                    hint: '-- Pilih Kategori Pengeluaran --',
-                    value: _selectedKategori,
-                    items: _daftarKategori,
-                    isMandatory: true,
-                    validator: (val) => val == null ? 'Kategori wajib dipilih' : null,
-                    onChanged: (val) => setState(() => _selectedKategori = val),
-                ),
-            ],
-        );
-    }
-
-    Widget _buildDetailTambahanSection() {
-        return _buildAccordionCard(
-            title: 'Detail Tambahan',
-            initiallyExpanded: false,
-            icon: Icons.assignment_outlined,
-            children: [
-                _buildTextField(
-                    controller: _tokoController,
-                    label: 'Nama Toko / Vendor',
-                    hint: 'Contoh: TB Sinar Maju',
-                    isMandatory: false,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                    controller: _notaController,
-                    label: 'Nomor Nota',
-                    hint: 'Contoh: INV-98742',
-                    isMandatory: false,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                    controller: _catatanController,
-                    label: 'Catatan',
-                    hint: 'Masukkan keterangan tambahan jika ada...',
-                    isMandatory: false,
-                    maxLines: 4,
-                ),
-            ],
-        );
-    }
-
-    Widget _buildBuktiPengeluaranSection() {
-        return _buildAccordionCard(
-            title: 'Bukti Pengeluaran',
-            initiallyExpanded: false,
-            icon: Icons.camera_alt_outlined,
-            children: [
-                Text('Foto Nota', style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 8),
-                if (!_hasReceiptPhoto) ...[
-                    GestureDetector(
-                        onTap: _simulatePhotoSelection,
-                        child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-                            decoration: BoxDecoration(
-                                color: _bgColor,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: _borderColor, width: 1, style: BorderStyle.solid),
-                            ),
-                            child: Column(
-                                children: [
-                                    Icon(Icons.cloud_upload_outlined, size: 36, color: _primaryColor.withOpacity(0.8)),
-                                    const SizedBox(height: 10),
-                                    Text('Belum Ada Nota Terunggah', style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 4),
-                                    Text(_isReadOnly ? 'Tidak ada bukti lampiran nota' : 'Ketuk area ini untuk mengunggah foto nota fisik', textAlign: TextAlign.center, style: TextStyle(color: _textSecondary, fontSize: 12)),
-                                ],
-                            ),
-                        ),
-                    ),
-                ] else ...[
-                    Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                            color: _bgColor,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: _borderColor),
-                        ),
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                                Container(
-                                    height: 160,
-                                    decoration: BoxDecoration(color: _borderColor.withOpacity(0.4), borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
-                                    child: Center(
-                                        child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                                Icon(Icons.receipt, color: _textSecondary, size: 24),
-                                                const SizedBox(width: 8),
-                                                Text('Preview_Nota_Fisik.jpg', style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
-                                            ],
-                                        ),
-                                    ),
-                                ),
-                                Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
-                                        children: [
-                                            TextButton.icon(
-                                                onPressed: () { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Membuka foto nota penuh (Simulasi)'))); },
-                                                icon: const Icon(Icons.visibility_outlined, size: 18),
-                                                label: const Text('Lihat Nota'),
-                                                style: TextButton.styleFrom(foregroundColor: _textPrimary),
-                                            ),
-                                            if (!_isReadOnly) ...[
-                                                const SizedBox(width: 8),
-                                                TextButton.icon(
-                                                    onPressed: _simulatePhotoSelection,
-                                                    icon: const Icon(Icons.refresh_outlined, size: 18),
-                                                    label: const Text('Ganti Nota'),
-                                                    style: TextButton.styleFrom(foregroundColor: _primaryColor),
-                                                ),
-                                            ],
-                                        ],
-                                    ),
-                                )
-                            ],
-                        ),
-                    ),
-                ],
-            ],
-        );
-    }
-
-    Widget _buildAccordionCard({required String title, required bool initiallyExpanded, required IconData icon, required List<Widget> children}) {
+    Widget _buildCardWrapper({required Widget child}) {
         return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20.0),
             decoration: BoxDecoration(
-                color: _cardColor,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _borderColor, width: 1),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.015), blurRadius: 10, offset: const Offset(0, 4))],
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20.0),
+                border: Border.all(color: _borderSlateLight, width: 1),
             ),
-            child: Theme(
-                data: Theme.of(context).copyWith(dividerColor: Colors.transparent, splashColor: Colors.transparent, highlightColor: Colors.transparent),
-                child: ExpansionTile(
-                    initiallyExpanded: initiallyExpanded,
-                    leading: Icon(icon, color: _primaryColor, size: 22),
-                    title: Text(title, style: TextStyle(color: _textPrimary, fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: -0.2)),
-                    iconColor: _textSecondary,
-                    collapsedIconColor: _textSecondary,
-                    childrenPadding: const EdgeInsets.all(20).copyWith(top: 0),
-                    expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: children,
-                ),
-            ),
+            child: child,
         );
     }
 
-    Widget _buildTextField({required TextEditingController controller, required String label, required String hint, required bool isMandatory, TextInputType keyboardType = TextInputType.text, List<TextInputFormatter>? inputFormatters, String? Function(String?)? validator, int maxLines = 1, Widget? prefixIcon}) {
+    Widget _buildTanggalField() {
         return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
                 Row(
                     children: [
-                        Text(label, style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                        if (isMandatory) Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text('Tanggal Transaksi', style: TextStyle(color: _textSlateMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                    controller: _tanggalController,
+                    readOnly: true,
+                    onTap: _selectTanggal,
+                    validator: (val) => val == null || val.isEmpty ? 'Tanggal wajib diisi' : null,
+                    style: TextStyle(color: _isReadOnly ? _textSlateMuted : _textSlatePrimary, fontSize: 15),
+                    decoration: InputDecoration(
+                        hintText: 'Pilih tanggal pengeluaran',
+                        hintStyle: TextStyle(color: _textSlateMuted.withOpacity(0.5), fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        fillColor: _isReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
+                        filled: true,
+                        suffixIcon: Icon(Icons.calendar_today_rounded, size: 16, color: _tealPrimary),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight, width: 1)),
+                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight.withOpacity(0.6), width: 1)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _tealPrimary, width: 1.5)),
+                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
+                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
+                    ),
+                ),
+            ],
+        );
+    }
+
+    Widget _buildBuktiPengeluaranContent() {
+        if (!_hasReceiptPhoto) {
+            return GestureDetector(
+                onTap: _simulatePhotoSelection,
+                child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _borderSlateLight, width: 1),
+                    ),
+                    child: Column(
+                        children: [
+                            Icon(Icons.cloud_upload_outlined, size: 32, color: _tealPrimary),
+                            const SizedBox(height: 8),
+                            Text('Belum ada nota terlampir', style: TextStyle(color: _textSlatePrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text(_isReadOnly ? 'Tidak ada bukti foto' : 'Ketuk di sini untuk unggah nota fisik', textAlign: TextAlign.center, style: TextStyle(color: _textSlateMuted, fontSize: 12)),
+                        ],
+                    ),
+                ),
+            );
+        } else {
+            return Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _borderSlateLight),
+                ),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                        Container(
+                            height: 120,
+                            alignment: Alignment.center,
+                            child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                    Icon(Icons.receipt_long_rounded, color: _tealPrimary, size: 22),
+                                    const SizedBox(width: 8),
+                                    Text('Preview_Nota_Fisik.jpg', style: TextStyle(color: _textSlatePrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                                ],
+                            ),
+                        ),
+                        if (!_isReadOnly)
+                            GestureDetector(
+                                onTap: _simulatePhotoSelection,
+                                child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+                                        border: Border(top: BorderSide(color: _borderSlateLight)),
+                                    ),
+                                    child: Text('Ganti Lampiran Nota', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _tealPrimary)),
+                                ),
+                            ),
+                    ],
+                ),
+            );
+        }
+    }
+
+    Widget _buildTextField({required TextEditingController controller, required String label, required String hint, required bool isMandatory, TextInputType keyboardType = TextInputType.text, List<TextInputFormatter>? inputFormatters, String? Function(String?)? validator, int maxLines = 1, Widget? prefix}) {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+                Row(
+                    children: [
+                        Text(label, style: TextStyle(color: _textSlateMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                        if (isMandatory) Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                 ),
                 const SizedBox(height: 6),
@@ -446,19 +449,18 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
                     inputFormatters: inputFormatters,
                     validator: validator,
                     maxLines: maxLines,
-                    style: TextStyle(color: _isReadOnly ? _textSecondary : _textPrimary, fontSize: 15),
-                    cursorColor: _primaryColor,
+                    style: TextStyle(color: _isReadOnly ? _textSlateMuted : _textSlatePrimary, fontSize: 15),
+                    cursorColor: _tealPrimary,
                     decoration: InputDecoration(
                         hintText: hint,
-                        hintStyle: TextStyle(color: _textSecondary.withOpacity(0.5), fontSize: 14),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        fillColor: _isReadOnly ? _bgColor : _cardColor,
+                        hintStyle: TextStyle(color: _textSlateMuted.withOpacity(0.5), fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        fillColor: _isReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
                         filled: true,
-                        prefixIcon: prefixIcon,
-                        prefixIconConstraints: prefixIcon != null ? const BoxConstraints(minWidth: 0, minHeight: 0) : null,
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor, width: 1)),
-                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor.withOpacity(0.6), width: 1)),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
+                        prefix: prefix,
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight, width: 1)),
+                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight.withOpacity(0.6), width: 1)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _tealPrimary, width: 1.5)),
                         errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
                         focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
                     ),
@@ -473,8 +475,8 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
             children: [
                 Row(
                     children: [
-                        Text(label, style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                        if (isMandatory) Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text(label, style: TextStyle(color: _textSlateMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                        if (isMandatory) Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                 ),
                 const SizedBox(height: 6),
@@ -483,23 +485,23 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
                     items: items.map((String item) {
                         return DropdownMenuItem<String>(
                             value: item,
-                            child: Text(item, style: TextStyle(color: _textPrimary, fontSize: 15)),
+                            child: Text(item, style: TextStyle(color: _textSlatePrimary, fontSize: 15)),
                         );
                     }).toList(),
                     onChanged: _isReadOnly ? null : onChanged,
                     validator: validator,
-                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: _textSecondary, size: 20),
-                    dropdownColor: _cardColor,
-                    style: TextStyle(color: _textPrimary, fontSize: 15),
+                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: _textSlateMuted, size: 20),
+                    dropdownColor: Colors.white,
+                    style: TextStyle(color: _textSlatePrimary, fontSize: 15),
                     decoration: InputDecoration(
                         hintText: hint,
-                        hintStyle: TextStyle(color: _textSecondary.withOpacity(0.6), fontSize: 14),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        fillColor: _isReadOnly ? _bgColor : _cardColor,
+                        hintStyle: TextStyle(color: _textSlateMuted.withOpacity(0.6), fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        fillColor: _isReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
                         filled: true,
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor, width: 1)),
-                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor.withOpacity(0.6), width: 1)),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight, width: 1)),
+                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight.withOpacity(0.6), width: 1)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _tealPrimary, width: 1.5)),
                         errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
                         focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
                     ),
@@ -510,13 +512,13 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
 
     Widget _buildStickyFooter() {
         final String cancelLabel = _isReadOnly ? 'Kembali' : 'Batal';
-        final String primaryLabel = _isReadOnly ? 'Edit Data' : 'Simpan Data';
+        final String primaryLabel = _isReadOnly ? 'Edit Data' : 'Simpan Nota';
 
         return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-                color: _cardColor,
-                border: Border(top: BorderSide(color: _borderColor, width: 1)),
+                color: Colors.white,
+                border: Border(top: BorderSide(color: _borderSlateLight, width: 1)),
             ),
             child: Row(
                 children: [
@@ -524,15 +526,14 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
                         child: OutlinedButton(
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                side: BorderSide(color: _borderColor),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                backgroundColor: _cardColor,
-                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                side: BorderSide(color: _borderSlateLight),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                backgroundColor: Colors.white,
                             ),
                             child: Text(
                                 cancelLabel,
-                                style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
+                                style: TextStyle(color: _textSlatePrimary, fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                         ),
                     ),
@@ -541,16 +542,15 @@ class _DetailPengeluaranPageState extends State<DetailPengeluaranPage> {
                         child: ElevatedButton(
                             onPressed: _handlePrimaryButtonAction,
                             style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                backgroundColor: _isReadOnly ? _primaryColor : _accentColor,
-                                foregroundColor: _cardColor,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                backgroundColor: _tealPrimary,
+                                foregroundColor: Colors.white,
                                 elevation: 0,
-                                shadowColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
                             child: Text(
                                 primaryLabel,
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                         ),
                     ),

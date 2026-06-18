@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_core/firebase_core.dart'; 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'pages/kamar_page.dart';
 import 'pages/keuangan_page.dart';
 import 'pages/lainnya_page.dart';
+import 'pages/sub-pages/pembayaran_page.dart'; 
+import 'pages/auth/login_page.dart'; 
 
-void main() {
+void main() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    await Firebase.initializeApp(
+        options: const FirebaseOptions(
+            apiKey: "AIzaSyB0dbEGCk58XyJqAOxd6E1hPo55wtDpk00", 
+            appId: "1:720608313095:android:1bbcbd15589bcf84098fa2", 
+            messagingSenderId: "720608313095", 
+            projectId: "docu-merge-c7e70", 
+            databaseURL: "https://docu-merge-c7e70-default-rtdb.firebaseio.com", 
+            storageBucket: "docu-merge-c7e70.firebasestorage.app",
+        ),
+    );
+    
     runApp(const GriyaApp());
 }
 
@@ -16,12 +34,36 @@ class GriyaApp extends StatelessWidget {
             title: 'Griya',
             debugShowCheckedModeBanner: false,
             theme: ThemeData(
-                primaryColor: const Color(0xFF1A73E8),
-                scaffoldBackgroundColor: const Color(0xFFF8F9FA),
                 useMaterial3: true,
-                fontFamily: 'Roboto',
+                colorSchemeSeed: const Color(0xFF0F766E), 
+                scaffoldBackgroundColor: const Color(0xFFECEFF1),
+                fontFamily: 'sans-serif',
             ),
-            home: const MainScreen(),
+            localizationsDelegates: [
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: const [
+                Locale('id', 'ID'), 
+            ],
+            home: StreamBuilder<User?>(
+                stream: FirebaseAuth.instance.authStateChanges(),
+                builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Scaffold(
+                            body: Center(
+                                child: CircularProgressIndicator(color: Color(0xFF0F766E)),
+                            ),
+                        );
+                    }
+                    if (snapshot.hasData) {
+                        return const MainScreen(); 
+                    }
+                    // KOREKSI MUTLAK: Kata kunci const dihapus agar kompilasi sah secara runtime
+                    return const LoginPage(); 
+                },
+            ),
         );
     }
 }
@@ -58,37 +100,37 @@ class _MainScreenState extends State<MainScreen> {
             ),
             bottomNavigationBar: Container(
                 decoration: const BoxDecoration(
-                    border: Border(top: BorderSide(color: Color(0xFFE8EAED), width: 1)),
+                    border: Border(top: BorderSide(color: Color(0xFFCFD8DC), width: 1)),
                 ),
                 child: BottomNavigationBar(
                     currentIndex: _selectedIndex,
                     onTap: _onItemTapped,
-                    backgroundColor: const Color(0xFFFFFFFF),
-                    selectedItemColor: const Color(0xFF1A73E8),
-                    unselectedItemColor: const Color(0xFF9CA3AF),
+                    backgroundColor: Colors.white,
+                    selectedItemColor: const Color(0xFF0F766E), 
+                    unselectedItemColor: const Color(0xFF94A3B8), 
                     type: BottomNavigationBarType.fixed,
                     elevation: 0,
-                    selectedFontSize: 12,
-                    unselectedFontSize: 12,
+                    selectedFontSize: 15, 
+                    unselectedFontSize: 15, 
+                    iconSize: 26, 
                     items: const [
                         BottomNavigationBarItem(
-                            icon: Icon(Icons.dashboard_outlined),
-                            activeIcon: Icon(Icons.dashboard),
+                            icon: Icon(Icons.grid_view_rounded),
                             label: 'Beranda',
                         ),
                         BottomNavigationBarItem(
-                            icon: Icon(Icons.bed_outlined),
-                            activeIcon: Icon(Icons.bed),
+                            icon: Icon(Icons.door_sliding_outlined),
+                            activeIcon: Icon(Icons.door_sliding_rounded),
                             label: 'Kamar',
                         ),
                         BottomNavigationBarItem(
                             icon: Icon(Icons.account_balance_wallet_outlined),
-                            activeIcon: Icon(Icons.account_balance_wallet),
+                            activeIcon: Icon(Icons.account_balance_wallet_rounded),
                             label: 'Keuangan',
                         ),
                         BottomNavigationBarItem(
-                            icon: Icon(Icons.menu),
-                            activeIcon: Icon(Icons.menu_open),
+                            icon: Icon(Icons.face_outlined),
+                            activeIcon: Icon(Icons.face_rounded),
                             label: 'Lainnya',
                         ),
                     ],
@@ -98,10 +140,6 @@ class _MainScreenState extends State<MainScreen> {
     }
 }
 
-// -------------------------------------------------------------
-// HALAMAN BERANDA (ACTION-FIRST DASHBOARD V2)
-// -------------------------------------------------------------
-
 class BerandaPage extends StatefulWidget {
     const BerandaPage({Key? key}) : super(key: key);
 
@@ -110,52 +148,19 @@ class BerandaPage extends StatefulWidget {
 }
 
 class _BerandaPageState extends State<BerandaPage> with SingleTickerProviderStateMixin {
-    bool _isRefreshing = false;
-    
-    // REVISI 9: Setup Micro Animation Halus Menggunakan Animasi Sekuensial Berkelanjutan
     late AnimationController _animationController;
-    late Animation<double> _fadeWelcome;
-    late Animation<double> _fadeHero;
-    late Animation<double> _fadeAttention;
-    late Animation<double> _fadeAlert;
-    late Animation<double> _fadeGrid;
-    late Animation<double> _fadeActions;
-    late Animation<double> _fadeInsight;
-    late Animation<double> _fadeRecent;
-
-    // Dummy Data Tugas Harian Pemilik Kos
-    final int _waitingVerificationCount = 2;
-    final int _overdueInvoicesCount = 1;
-    final int _dueTodayInvoicesCount = 3;
-
-    // Flag Kondisi Kritis untuk Alert Banner
-    final bool _hasCriticalAlert = true; 
+    late Animation<double> _fadeAnimation;
 
     @override
     void initState() {
         super.initState();
         _animationController = AnimationController(
             vsync: this,
-            duration: const Duration(milliseconds: 900),
+            duration: const Duration(milliseconds: 350),
         );
-
-        _fadeWelcome = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.0, 0.4, curve: Curves.easeOutCubic)));
-        _fadeHero = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.1, 0.5, curve: Curves.easeOutCubic)));
-        _fadeAttention = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.2, 0.6, curve: Curves.easeOutCubic)));
-        _fadeAlert = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.3, 0.7, curve: Curves.easeOutCubic)));
-        _fadeGrid = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.4, 0.8, curve: Curves.easeOutCubic)));
-        _fadeActions = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.5, 0.9, curve: Curves.easeOutCubic)));
-        _fadeInsight = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.6, 1.0, curve: Curves.easeOutCubic)));
-        _fadeRecent = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-            parent: _animationController, curve: const Interval(0.65, 1.0, curve: Curves.easeOutCubic)));
-
+        _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+            CurvedAnimation(parent: _animationController, curve: Curves.linear),
+        );
         _animationController.forward();
     }
 
@@ -166,10 +171,8 @@ class _BerandaPageState extends State<BerandaPage> with SingleTickerProviderStat
     }
 
     Future<void> _handleRefresh() async {
-        setState(() => _isRefreshing = true);
         _animationController.reset();
-        await Future.delayed(const Duration(milliseconds: 600));
-        setState(() => _isRefreshing = false);
+        await Future.delayed(const Duration(milliseconds: 200));
         _animationController.forward();
     }
 
@@ -183,56 +186,34 @@ class _BerandaPageState extends State<BerandaPage> with SingleTickerProviderStat
     @override
     Widget build(BuildContext context) {
         return Scaffold(
-            backgroundColor: const Color(0xFFF8F9FA),
+            backgroundColor: const Color(0xFFECEFF1),
             appBar: AppBar(
-                backgroundColor: const Color(0xFFFFFFFF),
+                backgroundColor: const Color(0xFFECEFF1),
                 elevation: 0,
-                scrolledUnderElevation: 1,
-                title: const Text(
-                    'Beranda',
-                    style: TextStyle(color: Color(0xFF202124), fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                actions: [
-                    IconButton(
-                        icon: const Badge(
-                            backgroundColor: Color(0xFFEA4335),
-                            label: Text('2'),
-                            child: Icon(Icons.notifications_none_outlined, color: Color(0xFF5F6368)),
-                        ),
-                        onPressed: () {},
-                    ),
-                    const SizedBox(width: 8),
-                ],
-                bottom: PreferredSize(
-                    preferredSize: const Size.fromHeight(1),
-                    child: Container(color: const Color(0xFFE8EAED), height: 1),
-                ),
+                scrolledUnderElevation: 0,
+                toolbarHeight: 16, 
             ),
-            body: SafeArea(
-                child: RefreshIndicator(
-                    onRefresh: _handleRefresh,
-                    color: const Color(0xFF1A73E8),
-                    backgroundColor: Colors.white,
+            body: RefreshIndicator(
+                onRefresh: _handleRefresh,
+                color: const Color(0xFF0F766E),
+                backgroundColor: Colors.white,
+                child: FadeTransition(
+                    opacity: _fadeAnimation,
                     child: SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20.0, 4.0, 20.0, 32.0),
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                                FadeTransition(opacity: _fadeWelcome, child: _buildWelcomeSection()),
-                                FadeTransition(opacity: _fadeHero, child: _buildHeroCard()),
-                                const SizedBox(height: 12),
-                                FadeTransition(opacity: _fadeAttention, child: _buildPerluPerhatianSection()),
-                                // REVISI 2: Alert banner dikondisikan hanya muncul untuk kasus darurat berskala kritis
-                                if (_hasCriticalAlert) FadeTransition(opacity: _fadeAlert, child: _buildAlertBanner()),
+                                _buildSimpleHeader(),
+                                const SizedBox(height: 24),
+                                _buildCardWrapper(child: _buildBigTextIncome()),
                                 const SizedBox(height: 16),
-                                FadeTransition(opacity: _fadeGrid, child: _buildModifiedStatGrid()),
-                                const SizedBox(height: 20),
-                                FadeTransition(opacity: _fadeActions, child: _buildQuickActions()),
-                                const SizedBox(height: 20),
-                                FadeTransition(opacity: _fadeInsight, child: _buildMiniInsightAndTrendSection()),
-                                const SizedBox(height: 20),
-                                FadeTransition(opacity: _fadeRecent, child: _buildRecentActivity()),
-                                const SizedBox(height: 40),
+                                _buildCardWrapper(child: _buildSimpleProgressOccupancy()),
+                                const SizedBox(height: 16),
+                                _buildJumboActionButtons(context),
+                                const SizedBox(height: 24),
+                                _buildCardWrapper(child: _buildCleanActivityLog()),
                             ],
                         ),
                     ),
@@ -241,342 +222,132 @@ class _BerandaPageState extends State<BerandaPage> with SingleTickerProviderStat
         );
     }
 
-    Widget _buildWelcomeSection() {
-        return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    Text(
-                        '${_getGreeting()}, Budi! 👋',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF202124)),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                        'Senin, 15 Juni 2026',
-                        style: TextStyle(fontSize: 13, color: Color(0xFF5F7A90), fontWeight: FontWeight.w500),
-                    ),
-                ],
-            ),
-        );
-    }
-
-    Widget _buildHeroCard() {
+    Widget _buildCardWrapper({required Widget child}) {
         return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-                color: const Color(0xFFFFFFFF),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE8EAED)),
-                boxShadow: const [
-                    BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2)),
-                ],
-            ),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    const Text(
-                        'PEMASUKAN BULAN INI',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5F7A90), letterSpacing: 0.5),
-                    ),
-                    const SizedBox(height: 6),
-                    const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                            'Rp 4.500.000',
-                            style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8), letterSpacing: -0.5),
-                        ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                        children: [
-                            Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                    color: const Color(0xFF34A853).withOpacity(0.08),
-                                    borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Row(
-                                    children: [
-                                        Icon(Icons.arrow_upward_rounded, size: 12, color: Color(0xFF34A853)),
-                                        SizedBox(width: 4),
-                                        Text('15% dari bulan lalu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF34A853))),
-                                    ],
-                                ),
-                            ),
-                            const Spacer(),
-                            const Text('12 pembayaran semenjak awal', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500)),
-                        ],
-                    ),
-                ],
-            ),
-        );
-    }
-
-    // REVISI 1: Section Baru "Perlu Perhatian Hari Ini" (Compact & Action-Driven)
-    Widget _buildPerluPerhatianSection() {
-        final hasTasks = _waitingVerificationCount > 0 || _overdueInvoicesCount > 0 || _dueTodayInvoicesCount > 0;
-
-        return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(14),
+            width: double.infinity,
+            padding: const EdgeInsets.all(24.0), 
             decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE8EAED)),
+                borderRadius: BorderRadius.circular(24.0), 
+                border: Border.all(color: const Color(0xFFCFD8DC), width: 1.2),
             ),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    const Text(
-                        'Perlu Perhatian Hari Ini',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF202124)),
-                    ),
-                    const SizedBox(height: 8),
-                    if (!hasTasks)
-                        Row(
-                            children: const [
-                                Icon(Icons.check_circle_outline_rounded, color: Color(0xFF34A853), size: 16),
-                                SizedBox(width: 8),
-                                Text('Tidak ada tindakan penting hari ini', style: TextStyle(fontSize: 13, color: Color(0xFF34A853), fontWeight: FontWeight.w500)),
-                            ],
-                        )
-                    else ...[
-                        if (_waitingVerificationCount > 0)
-                            _buildPerluPerhatianItem(Icons.hourglass_empty_rounded, '$_waitingVerificationCount pembayaran menunggu verifikasi', const Color(0xFFFBBC04)),
-                        if (_overdueInvoicesCount > 0)
-                            _buildPerluPerhatianItem(Icons.warning_amber_rounded, '$_overdueInvoicesCount kamar terlambat bayar sewa kos', const Color(0xFFEA4335)),
-                        if (_dueTodayInvoicesCount > 0)
-                            _buildPerluPerhatianItem(Icons.receipt_long_rounded, '$_dueTodayInvoicesCount tagihan jatuh tempo hari ini', const Color(0xFF1A73E8)),
-                    ],
-                ],
-            ),
+            child: child,
         );
     }
 
-    Widget _buildPerluPerhatianItem(IconData icon, String text, Color color) {
-        return Material(
-            color: Colors.transparent,
-            child: InkWell(
-                onTap: () {},
-                child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6.0),
-                    child: Row(
-                        children: [
-                            Icon(icon, size: 15, color: color),
-                            const SizedBox(width: 8),
-                            Expanded(
-                                child: Text(
-                                    text,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 13, color: Color(0xFF202124), fontWeight: FontWeight.w500),
-                                ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF9CA3AF)),
-                        ],
-                    ),
-                ),
-            ),
-        );
-    }
-
-    Widget _buildAlertBanner() {
-        return Container(
-            margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
-                borderRadius: BorderRadius.circular(12),
-                border: const Border(left: BorderSide(color: Color(0xFFEA4335), width: 4)),
-            ),
-            child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    const Icon(Icons.gavel_rounded, color: Color(0xFFEA4335), size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                                const Text(
-                                    'KRITIS: Kamar 102 menunggak > 1 bulan',
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFB91C1C)),
-                                ),
-                                const SizedBox(height: 2),
-                                const Text(
-                                    'Segera tindak lanjuti tagihan sebesar Rp 900.000',
-                                    style: TextStyle(fontSize: 12, color: Color(0xFFDC2626)),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                    children: [
-                                        ElevatedButton(
-                                            onPressed: () {},
-                                            style: ElevatedButton.styleFrom(
-                                                backgroundColor: const Color(0xFFEA4335),
-                                                foregroundColor: Colors.white,
-                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                                                minimumSize: const Size(0, 28),
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                                elevation: 0,
-                                            ),
-                                            child: const Text('Hubungi', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        TextButton(
-                                            onPressed: () {},
-                                            style: TextButton.styleFrom(
-                                                foregroundColor: const Color(0xFFB91C1C),
-                                                minimumSize: const Size(0, 28),
-                                            ),
-                                            child: const Text('Detail', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ),
-                ],
-            ),
-        );
-    }
-
-    // REVISI 3 & 4: Gabungkan Stat Grid Menjadi Card Hunian & Card Status Pembayaran Berdampingan Simetris
-    Widget _buildModifiedStatGrid() {
-        return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    // CARD HUNIAN KAMAR (Kiri)
-                    Expanded(
-                        child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFE8EAED)),
-                            ),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                    const Text('Hunian Kamar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8))),
-                                    const SizedBox(height: 8),
-                                    const FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        child: Text('12 / 15 Terisi', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF202124))),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    ClipRRect(
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: const LinearProgressIndicator(
-                                            value: 0.8,
-                                            backgroundColor: Color(0xFFE8EAED),
-                                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A73E8)),
-                                            minHeight: 4,
-                                        ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: const [
-                                            Text('80% Rasio', style: TextStyle(fontSize: 11, color: Color(0xFF5F7A90), fontWeight: FontWeight.w500)),
-                                            Text('3 kosong', style: TextStyle(fontSize: 11, color: Color(0xFF34A853), fontWeight: FontWeight.bold)),
-                                        ],
-                                    ),
-                                ],
-                            ),
-                        ),
-                    ),
-                    const SizedBox(width: 12),
-                    // CARD STATUS PEMBAYARAN (Kanan)
-                    Expanded(
-                        child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFE8EAED)),
-                            ),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                    const Text('Status Pembayaran', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF5F7A90))),
-                                    const SizedBox(height: 10),
-                                    _buildStatusBadgeRow('Pending', '2', const Color(0xFFFBBC04)),
-                                    const SizedBox(height: 6),
-                                    _buildStatusBadgeRow('Terlambat', '1', const Color(0xFFEA4335)),
-                                    const SizedBox(height: 6),
-                                    _buildStatusBadgeRow('Aktif', '12', const Color(0xFF1A73E8)),
-                                ],
-                            ),
-                        ),
-                    ),
-                ],
-            ),
-        );
-    }
-
-    Widget _buildStatusBadgeRow(String label, String count, Color color) {
-        return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    Widget _buildSimpleHeader() {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF202124), fontWeight: FontWeight.w500)),
-                Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: color.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                        count,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
-                    ),
+                Text(
+                    'Selamat ${_getGreeting()}, Budi',
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w400, color: Color(0xFF0F172A), letterSpacing: -0.4),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                    'Berikut adalah kondisi kos Anda hari ini.',
+                    style: TextStyle(fontSize: 14, color: Color(0xFF64748B), fontWeight: FontWeight.w400),
                 ),
             ],
         );
     }
 
-    // REVISI 5: Menyederhanakan Tombol Menjadi 2 Saja Dan Berukuran Besar Menonjol
-    Widget _buildQuickActions() {
-        return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-                children: [
-                    Expanded(child: _buildModifiedActionButton(Icons.payments_outlined, 'Catat Pembayaran', const Color(0xFF1A73E8))),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildModifiedActionButton(Icons.fact_check_outlined, 'Verifikasi Bayar', const Color(0xFF34A853))),
-                ],
-            ),
+    Widget _buildBigTextIncome() {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+                const Text(
+                    'Pemasukan Bulan Ini',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: Color(0xFF64748B), letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                    'Rp 4.500.000',
+                    style: TextStyle(fontSize: 44, fontWeight: FontWeight.w500, color: const Color(0xFF0F766E), letterSpacing: -1.0),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                    '↑ Naik 15% dari bulan lalu',
+                    style: TextStyle(fontSize: 15, color: Color(0xFF0F766E), fontWeight: FontWeight.w500),
+                ),
+            ],
         );
     }
 
-    Widget _buildModifiedActionButton(IconData icon, String label, Color color) {
+    Widget _buildSimpleProgressOccupancy() {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+                Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: const [
+                        Text(
+                            'Kamar Terisi (80%)',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Color(0xFF0F172A)),
+                        ),
+                        Text(
+                            '12 / 15 Unit',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Color(0xFF0F766E)),
+                        ),
+                    ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: const LinearProgressIndicator(
+                        value: 0.8,
+                        backgroundColor: Color(0xFFF1F5F9),
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0F766E)),
+                        minHeight: 10, 
+                    ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                    'Tersisa 3 unit kamar kosong yang siap disewakan.',
+                    style: TextStyle(fontSize: 14, color: Color(0xFF64748B), fontWeight: FontWeight.w400),
+                ),
+            ],
+        );
+    }
+
+    Widget _buildJumboActionButtons(BuildContext context) {
+        return Row(
+            children: [
+                Expanded(child: _buildLargeActionTile(Icons.add_box_rounded, 'Catat Kas', const Color(0xFF0F766E), () {
+                    // Terkunci aman
+                })),
+                const SizedBox(width: 14),
+                Expanded(child: _buildLargeActionTile(Icons.check_circle_rounded, 'Verifikasi', const Color(0xFF1E293B), () {
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const PembayaranPage()),
+                    );
+                })),
+            ],
+        );
+    }
+
+    Widget _buildLargeActionTile(IconData icon, String label, Color color, VoidCallback onTap) {
         return ElevatedButton(
-            onPressed: () {},
+            onPressed: onTap,
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: color,
-                surfaceTintColor: Colors.white,
+                backgroundColor: color,
+                foregroundColor: Colors.white,
                 elevation: 0,
-                side: BorderSide(color: color.withOpacity(0.3), width: 1.2),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 20), 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
             child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                    Icon(icon, color: color, size: 20),
-                    const SizedBox(width: 8),
+                    Icon(icon, size: 22, color: Colors.white),
+                    const SizedBox(width: 10),
                     Flexible(
                         child: Text(
                             label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF202124)),
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, letterSpacing: 0.3),
                         ),
                     ),
                 ],
@@ -584,214 +355,60 @@ class _BerandaPageState extends State<BerandaPage> with SingleTickerProviderStat
         );
     }
 
-    // REVISI 6 & 7: Kombinasi Section Mini Insight & Mini Trend Visual (Sparkline) Saling Menyeimbangkan
-    Widget _buildMiniInsightAndTrendSection() {
-        return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE8EAED)),
-                ),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                        const Text('Ringkasan Bulan Ini', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF202124))),
-                        const SizedBox(height: 10),
-                        _buildInsightInlineRow('📈', 'Pemasukan naik 15% dibanding bulan lalu'),
-                        const SizedBox(height: 6),
-                        _buildInsightInlineRow('🏠', 'Tingkat hunian stabil di atas 80%'),
-                        const SizedBox(height: 6),
-                        _buildInsightInlineRow('⚡', 'Pengeluaran listrik naik sekitar 8%'),
-                        const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Divider(height: 1, color: Color(0xFFE8EAED)),
-                        ),
-                        const Text('Tren Pendapatan 7 Hari', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF5F6368))),
-                        const SizedBox(height: 10),
-                        // Mini Sparkline tanpa menggunakan package eksternal
-                        SizedBox(
-                            height: 60,
-                            width: double.infinity,
-                            child: CustomPaint(
-                                painter: _MiniSparklinePainter(lineColor: const Color(0xFF1A73E8)),
-                            ),
-                        ),
-                    ],
-                ),
-            ),
-        );
-    }
+    Widget _buildCleanActivityLog() {
+        final List<Map<String, String>> logs = [
+            {'unit': 'Kamar 101', 'action': 'Pembayaran sewa lunas', 'time': '15:30', 'val': '+Rp 450.000'},
+            {'unit': 'Kamar 105', 'action': 'Tagihan baru dibuat', 'time': '14:00', 'val': 'Rp 400.000'},
+            {'unit': 'Kamar 103', 'action': 'Pembayaran sewa lunas', 'time': 'Kemarin', 'val': '+Rp 450.000'},
+        ];
 
-    Widget _buildInsightInlineRow(String emoji, String text) {
-        return Row(
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                Text(emoji, style: const TextStyle(fontSize: 12)),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: Text(
-                        text,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF202124), fontWeight: FontWeight.w500),
-                    ),
+                const Text(
+                    'Aktivitas Terbaru',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w400, color: Color(0xFF0F172A)),
+                ),
+                const SizedBox(height: 16),
+                ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: logs.length,
+                    separatorBuilder: (context, index) => const Divider(height: 28, color: Color(0xFFF1F5F9)),
+                    itemBuilder: (context, index) {
+                        final item = logs[index];
+                        final isPlus = item['val']!.startsWith('+');
+                        return Row(
+                            children: [
+                                Expanded(
+                                    child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                            Text(
+                                                item['unit']!,
+                                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Color(0xFF0F172A)),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                                '${item['action']} • ${item['time']}',
+                                                style: const TextStyle(fontSize: 14, color: Color(0xFF64748B), fontWeight: FontWeight.w400),
+                                            ),
+                                        ],
+                                    ),
+                                ),
+                                Text(
+                                    item['val']!,
+                                    style: TextStyle(
+                                        fontSize: 16, 
+                                        fontWeight: FontWeight.w500, 
+                                        color: isPlus ? const Color(0xFF0F766E) : const Color(0xFF0F172A),
+                                    ),
+                                ),
+                            ],
+                        );
+                    },
                 ),
             ],
         );
     }
-
-    // REVISI 8: Aktivitas Terbaru Ditingkatkan Melalui Feedback Visual Ripple & Chevron Kanan
-    Widget _buildRecentActivity() {
-        final List<Map<String, dynamic>> activities = [
-            {'kamar': 'Kamar 101', 'nominal': 'Rp 450.000', 'time': '15:30', 'status': 'Lunas', 'isSuccess': true},
-            {'kamar': 'Kamar 105', 'nominal': 'Rp 400.000', 'time': '14:00', 'status': 'Pending', 'isSuccess': false},
-            {'kamar': 'Kamar 103', 'nominal': 'Rp 450.000', 'time': 'Kemarin', 'status': 'Lunas', 'isSuccess': true},
-        ];
-
-        return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                            const Text('Aktivitas Terbaru', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF202124))),
-                            TextButton(
-                                onPressed: () {},
-                                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                                child: const Text('Lihat Semua', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8))),
-                            ),
-                        ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                        decoration: BoxDecoration(
-                            color: const Color(0xFFFFFFFF),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE8EAED)),
-                        ),
-                        child: ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: activities.length,
-                            separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFE8EAED)),
-                            itemBuilder: (context, index) {
-                                final item = activities[index];
-                                final isSuccess = item['isSuccess'] as bool;
-                                return Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                        onTap: () {}, // Trigger feedback riak air (ripple effect)
-                                        borderRadius: index == 0 
-                                            ? const BorderRadius.vertical(top: Radius.circular(12)) 
-                                            : index == activities.length - 1 
-                                                ? const BorderRadius.vertical(bottom: Radius.circular(12)) 
-                                                : BorderRadius.zero,
-                                        child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                            child: Row(
-                                                children: [
-                                                    Container(
-                                                        padding: const EdgeInsets.all(8),
-                                                        decoration: BoxDecoration(
-                                                            color: isSuccess ? const Color(0xFF34A853).withOpacity(0.08) : const Color(0xFFFBBC04).withOpacity(0.08),
-                                                            shape: BoxShape.circle,
-                                                        ),
-                                                        child: Icon(
-                                                            isSuccess ? Icons.check_circle_outline_rounded : Icons.hourglass_empty_rounded,
-                                                            color: isSuccess ? const Color(0xFF34A853) : const Color(0xFFFBBC04),
-                                                            size: 18,
-                                                        ),
-                                                    ),
-                                                    const SizedBox(width: 12),
-                                                    Expanded(
-                                                        child: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            children: [
-                                                                Row(
-                                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                                    children: [
-                                                                        Text(item['kamar'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF202124))),
-                                                                        Text(item['nominal'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF202124))),
-                                                                    ],
-                                                                ),
-                                                                const SizedBox(height: 4),
-                                                                Row(
-                                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                                    children: [
-                                                                        Text(item['time'], style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500)),
-                                                                        Text(item['status'], style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isSuccess ? const Color(0xFF34A853) : const Color(0xFFFBBC04))),
-                                                                    ],
-                                                                ),
-                                                            ],
-                                                        ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF9CA3AF)),
-                                                ],
-                                            ),
-                                        ),
-                                    ),
-                                );
-                            },
-                        ),
-                    ),
-                ],
-            ),
-        );
-    }
-}
-
-// Custom Painter untuk Menggambar Sparkline Mini 7 Hari Tanpa Plugin Eksternal
-class _MiniSparklinePainter extends CustomPainter {
-    final Color lineColor;
-    _MiniSparklinePainter({required this.lineColor});
-
-    @override
-    void paint(Canvas canvas, Size size) {
-        final paintLine = Paint()
-            ..color = lineColor
-            ..strokeWidth = 2.0
-            ..style = PaintingStyle.stroke
-            ..strokeCap = StrokeCap.round;
-
-        final paintFill = Paint()
-            ..shader = LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [lineColor.withOpacity(0.12), lineColor.withOpacity(0.0)],
-            ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-
-        // Contoh Koordinat Statis Mini Trend Laba Kos 7 Hari Terakhir
-        final List<Offset> points = [
-            Offset(0, size.height * 0.70),
-            Offset(size.width * 0.16, size.height * 0.75),
-            Offset(size.width * 0.32, size.height * 0.45),
-            Offset(size.width * 0.48, size.height * 0.55),
-            Offset(size.width * 0.64, size.height * 0.25),
-            Offset(size.width * 0.80, size.height * 0.30),
-            Offset(size.width, size.height * 0.10),
-        ];
-
-        final path = Path()..moveTo(points[0].dx, points[0].dy);
-        for (int i = 1; i < points.length; i++) {
-            final prev = points[i - 1];
-            final current = points[i];
-            path.cubicTo((prev.dx + current.dx) / 2, prev.dy, (prev.dx + current.dx) / 2, current.dy, current.dx, current.dy);
-        }
-
-        final fillPath = Path.from(path)
-            ..lineTo(size.width, size.height)
-            ..lineTo(0, size.height)
-            ..close();
-
-        canvas.drawPath(fillPath, paintFill);
-        canvas.drawPath(path, paintLine);
-    }
-
-    @override
-    bool shouldRepaint(covariant _MiniSparklinePainter oldDelegate) => false;
 }

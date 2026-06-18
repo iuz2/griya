@@ -1,5 +1,10 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:image_picker/image_picker.dart';
 
 class DetailPenyewaPage extends StatefulWidget {
     final bool isEditMode;
@@ -22,13 +27,14 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
 
     late bool _currentReadOnly;
     late bool _currentEditMode;
+    bool _isLoading = false;
 
-    final Color _bgColor = const Color(0xfff8fafc);
-    final Color _cardColor = const Color(0xffffffff);
-    final Color _borderColor = const Color(0xffe2e8f0);
-    final Color _textPrimary = const Color(0xff202124);
-    final Color _textSecondary = const Color(0xff6b7280);
-    final Color _accentColor = const Color(0xff059669);
+    // Konsistensi Skema Warna Mutlak Pakem V4 Modern Teal
+    final Color _tealPrimary = const Color(0xFF0F766E);
+    final Color _textSlatePrimary = const Color(0xFF0F172A);
+    final Color _textSlateMuted = const Color(0xFF64748B);
+    final Color _borderSlateLight = const Color(0xFFCFD8DC);
+    final Color _errorColor = const Color(0xFFEF4444);
 
     // Controllers
     final TextEditingController _namaController = TextEditingController();
@@ -39,12 +45,16 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
     final TextEditingController _alamatAsalController = TextEditingController();
     final TextEditingController _catatanController = TextEditingController();
 
-    String? _selectedKamar;
+    String? _selectedKamarId;
+    String? _selectedKamarName;
     String? _selectedHubungan;
-    bool _hasIdPhoto = false; 
+    
+    File? _imageFile;
+    final ImagePicker _picker = ImagePicker();
 
-    final List<String> _daftarKamar = ['Kamar A1', 'Kamar A2', 'Kamar B1', 'Kamar B2', 'Kamar 101', 'Kamar 102', 'Kamar 103', 'Kamar 104', 'Kamar 105'];
+    List<Map<String, dynamic>> _liveRoomsFromFirebase = [];
     final List<String> _daftarHubungan = ['Orang Tua', 'Suami / Istri', 'Saudara Kandung', 'Kerabat', 'Teman', 'Lainnya'];
+    final String _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     @override
     void initState() {
@@ -64,20 +74,18 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
             _alamatAsalController.text = widget.penyewa!['alamat_asal'] ?? '';
             _catatanController.text = widget.penyewa!['catatan_internal'] ?? '';
             
-            final String? kamarPenyewa = widget.penyewa!['kamar'];
-            if (_daftarKamar.contains(kamarPenyewa)) {
-                _selectedKamar = kamarPenyewa;
-            } else if (kamarPenyewa != null) {
-                _daftarKamar.add(kamarPenyewa);
-                _selectedKamar = kamarPenyewa;
-            }
+            _selectedKamarId = widget.penyewa!['room_id'];
+            _selectedKamarName = widget.penyewa!['kamar']?.toString().replaceAll('Kamar ', '');
 
             final String? hubunganPj = widget.penyewa!['hubungan_pj'];
             if (_daftarHubungan.contains(hubunganPj)) {
                 _selectedHubungan = hubunganPj;
             }
             
-            _hasIdPhoto = widget.penyewa!['has_foto'] ?? false;
+            final String? localPath = widget.penyewa!['foto_ktp_local'];
+            if (localPath != null && localPath.isNotEmpty) {
+                _imageFile = File(localPath);
+            }
         }
     }
 
@@ -100,13 +108,17 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
             initialDate: DateTime.now(),
             firstDate: DateTime(2020),
             lastDate: DateTime(2030),
+            locale: const Locale('id', 'ID'), 
+            confirmText: 'PILIH',
+            cancelText: 'BATAL',
+            helpText: 'PILIH TANGGAL MASUK KOS',
             builder: (context, child) {
                 return Theme(
                     data: Theme.of(context).copyWith(
                         colorScheme: ColorScheme.light(
-                            primary: _accentColor,
-                            onPrimary: _cardColor,
-                            onSurface: _textPrimary,
+                            primary: _tealPrimary,
+                            onPrimary: Colors.white,
+                            onSurface: _textSlatePrimary,
                         ),
                     ),
                     child: child!,
@@ -125,365 +137,456 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
         return bulan[month - 1];
     }
 
-    void _simulateIdPhotoSelection() {
+    void _showImageSourceBottomSheet() {
         if (_currentReadOnly) return;
-        setState(() {
-            _hasIdPhoto = true;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: const Text('Foto identitas berhasil diperbarui (Simulasi)'),
-                backgroundColor: _accentColor,
-                duration: const Duration(seconds: 2),
-            ),
+        showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.white,
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            builder: (context) {
+                return SafeArea(
+                    child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                                ListTile(
+                                    leading: Icon(Icons.camera_alt_outlined, color: _tealPrimary),
+                                    title: const Text('Ambil Lewat Kamera HP', style: TextStyle(fontSize: 15)),
+                                    onTap: () {
+                                        Navigator.pop(context);
+                                        _pickImage(ImageSource.camera);
+                                    },
+                                ),
+                                ListTile(
+                                    leading: Icon(Icons.photo_library_outlined, color: _tealPrimary),
+                                    title: const Text('Ambil Dari Galeri Foto', style: TextStyle(fontSize: 15)),
+                                    onTap: () {
+                                        Navigator.pop(context);
+                                        _pickImage(ImageSource.gallery);
+                                    },
+                                ),
+                            ],
+                        ),
+                    ),
+                );
+            },
         );
     }
 
-    void _handlePrimaryButtonAction() {
+    Future<void> _pickImage(ImageSource source) async {
+        try {
+            final XFile? pickedFile = await _picker.pickImage(
+                source: source,
+                imageQuality: 70,
+            );
+            if (pickedFile != null) {
+                setState(() {
+                    _imageFile = File(pickedFile.path);
+                });
+                _showSnackBar('Foto dokumen identitas berhasil diperbarui', _tealPrimary);
+            }
+        } catch (e) {
+            _showSnackBar('Gagal mengambil gambar perangkat', _errorColor);
+        }
+    }
+
+    void _handlePrimaryButtonAction() async {
         if (_currentReadOnly) {
             setState(() {
                 _currentReadOnly = false;
                 _currentEditMode = true;
             });
-        } else {
-            if (_formKey.currentState!.validate()) {
-                final String pesanSukses = widget.penyewa == null || !widget.isEditMode
-                        ? 'Data penyewa baru berhasil disimpan' 
-                        : 'Perubahan data penyewa berhasil disimpan';
-                        
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text(pesanSukses),
-                        backgroundColor: _accentColor,
-                    ),
-                );
-                Navigator.pop(context);
-            }
+            return;
         }
+
+        if (!_formKey.currentState!.validate() || _selectedKamarId == null) {
+            _showSnackBar("Mohon lengkapi seluruh kolom input wajib!", _errorColor);
+            return;
+        }
+
+        setState(() => _isLoading = true);
+
+        final DatabaseReference dbRef = FirebaseDatabase.instance.ref();
+        
+        String? tenantId = widget.penyewa?['tenant_id'];
+        if (tenantId == null || tenantId.isEmpty) {
+            tenantId = dbRef.child('users_data/$_currentUid/tenants').push().key;
+        }
+
+        if (tenantId == null) {
+            setState(() => _isLoading = false);
+            return;
+        }
+
+        final Map<String, dynamic> transaksionalUpdatePayload = {
+            'users_data/$_currentUid/tenants/$tenantId': {
+                'tenant_id': tenantId,
+                'tenant_name': _namaController.text.trim(),
+                'tenant_phone': _waController.text.trim(),
+                'emergency_contact_name': _namaPjController.text.trim(),
+                'emergency_contact_phone': _waPjController.text.trim(),
+                'room_id': _selectedKamarId,
+                'room_name': _selectedKamarName,
+                'join_date': _tanggalMasukController.text.trim(),
+                'tenant_address': _alamatAsalController.text.trim().isEmpty ? '-' : _alamatAsalController.text.trim(),
+                'notes': _catatanController.text.trim(),
+                'hubungan_pj': _selectedHubungan,
+                'foto_ktp_local': _imageFile?.path ?? '',
+            },
+            'users_data/$_currentUid/rooms/$_selectedKamarId/availability_status': 'occupied',
+            'users_data/$_currentUid/rooms/$_selectedKamarId/tenant_name': _namaController.text.trim(),
+            'users_data/$_currentUid/rooms/$_selectedKamarId/tenant_phone': _waController.text.trim(),
+            'users_data/$_currentUid/rooms/$_selectedKamarId/tenant_address': _alamatAsalController.text.trim().isEmpty ? '-' : _alamatAsalController.text.trim(),
+            'users_data/$_currentUid/rooms/$_selectedKamarId/start_date': _tanggalMasukController.text.trim(),
+            'users_data/$_currentUid/rooms/$_selectedKamarId/notes': _catatanController.text.trim(),
+        };
+
+        try {
+            await dbRef.update(transaksionalUpdatePayload);
+            _showSnackBar("Data penyewa baru berhasil disimpan secara permanen!", _tealPrimary);
+            if (mounted) Navigator.pop(context);
+        } catch (e) {
+            _showSnackBar(e.toString(), _errorColor);
+        } finally {
+            if (mounted) setState(() => _isLoading = false);
+        }
+    }
+
+    void _showSnackBar(String message, Color bgColor) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(message),
+                backgroundColor: bgColor,
+            ),
+        );
     }
 
     @override
     Widget build(BuildContext context) {
+        final Query roomsQuery = FirebaseDatabase.instance.ref().child('users_data/$_currentUid/rooms');
+
         String appBarTitle = 'Tambah Penyewa Baru';
         if (_currentReadOnly) {
-            appBarTitle = 'Detail Penyewa';
+            appBarTitle = 'Detail Berkas Penyewa';
         } else if (_currentEditMode) {
             appBarTitle = 'Edit Data Penyewa';
         }
 
         return Scaffold(
-            backgroundColor: _bgColor,
+            backgroundColor: const Color(0xFFECEFF1), 
             appBar: AppBar(
-                backgroundColor: _cardColor,
+                backgroundColor: Colors.white,
                 elevation: 0,
                 scrolledUnderElevation: 0,
                 leading: IconButton(
-                    icon: Icon(Icons.arrow_back_ios_new, color: _textPrimary, size: 20),
+                    icon: Icon(Icons.arrow_back_ios_new_rounded, color: _textSlatePrimary, size: 18),
                     onPressed: () => Navigator.pop(context),
                 ),
                 title: Text(
                     appBarTitle,
-                    style: TextStyle(
-                        color: _textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.5,
-                    ),
+                    style: TextStyle(color: _textSlatePrimary, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                shape: Border(bottom: BorderSide(color: _borderColor, width: 1)),
+                centerTitle: true,
+                bottom: const PreferredSize(
+                    preferredSize: Size.fromHeight(1),
+                    child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+                ),
             ),
             body: SafeArea(
-                child: Column(
-                    children: [
-                        Expanded(
-                            child: Form(
-                                key: _formKey,
-                                child: ListView(
-                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                                    physics: const ClampingScrollPhysics(),
-                                    children: [
-                                        _buildInformasiPenghuniSection(),
-                                        const SizedBox(height: 16),
-                                        _buildHunianSection(),
-                                        const SizedBox(height: 16),
-                                        _buildKontakDaruratSection(),
-                                        const SizedBox(height: 16),
-                                        _buildIdentitasSection(),
-                                        const SizedBox(height: 16),
-                                        _buildInformasiTambahanSection(),
-                                    ],
-                                ),
-                            ),
-                        ),
-                        _buildStickyFooter(),
-                    ],
-                ),
-            ),
-        );
-    }
+                child: StreamBuilder<DatabaseEvent>(
+                    stream: roomsQuery.onValue,
+                    builder: (context, roomsSnapshot) {
+                        List<Map<String, dynamic>> liveAvailableRooms = [];
 
-    // ==========================================
-    // SECTION 1 - INFORMASI PENGHUNI
-    // ==========================================
-    Widget _buildInformasiPenghuniSection() {
-        return _buildAccordionCard(
-            title: 'Informasi Penghuni',
-            initiallyExpanded: true,
-            icon: Icons.person_outline_rounded,
-            children: [
-                _buildTextField(
-                    controller: _namaController,
-                    label: 'Nama Lengkap',
-                    hint: 'Masukkan nama sesuai KTP',
-                    isMandatory: true,
-                    validator: (val) => val == null || val.trim().isEmpty ? 'Nama lengkap wajib diisi' : null,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                    controller: _waController,
-                    label: 'WhatsApp',
-                    hint: 'Contoh: 0812xxxxxxxx',
-                    isMandatory: true,
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    validator: (val) => val == null || val.trim().isEmpty ? 'Nomor WhatsApp wajib diisi' : null,
-                ),
-            ],
-        );
-    }
+                        if (roomsSnapshot.hasData && roomsSnapshot.data!.snapshot.value != null) {
+                            final Map<dynamic, dynamic> mapKamar = roomsSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+                            mapKamar.forEach((key, val) {
+                                final item = val as Map<dynamic, dynamic>;
+                                if (item['availability_status'] == 'empty') {
+                                    liveAvailableRooms.add({
+                                        'room_id': item['room_id']?.toString() ?? key.toString(),
+                                        'room_name': item['room_name']?.toString() ?? 'Kamar Tanpa Nama',
+                                    });
+                                }
+                            });
+                            liveAvailableRooms.sort((a, b) => a['room_name'].compareTo(b['room_name']));
+                        }
 
-    // ==========================================
-    // SECTION 2 - HUNIAN
-    // ==========================================
-    Widget _buildHunianSection() {
-        return _buildAccordionCard(
-            title: 'Hunian',
-            initiallyExpanded: false,
-            icon: Icons.bed_outlined,
-            children: [
-                _buildDropdownField(
-                    label: 'Kamar',
-                    hint: '-- Pilih Alokasi Kamar --',
-                    value: _selectedKamar,
-                    items: _daftarKamar,
-                    isMandatory: true,
-                    validator: (val) => val == null ? 'Kamar wajib dipilih' : null,
-                    onChanged: (val) => setState(() => _selectedKamar = val),
-                ),
-                const SizedBox(height: 16),
-                Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                        Row(
+                        if (_selectedKamarId != null && _selectedKamarName != null) {
+                            bool exists = liveAvailableRooms.any((r) => r['room_id'] == _selectedKamarId);
+                            if (!exists) {
+                                liveAvailableRooms.insert(0, {
+                                    'room_id': _selectedKamarId!,
+                                    'room_name': _selectedKamarName!,
+                                });
+                            }
+                        }
+
+                        _liveRoomsFromFirebase = liveAvailableRooms;
+
+                        return Column(
                             children: [
-                                Text('Tanggal Masuk', style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                                Text(' *', style: TextStyle(color: Colors.red.shade400, fontSize: 13, fontWeight: FontWeight.w600)),
-                            ],
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                            controller: _tanggalMasukController,
-                            readOnly: true,
-                            onTap: _selectTanggalMasuk,
-                            validator: (val) => val == null || val.isEmpty ? 'Tanggal masuk wajib diisi' : null,
-                            style: TextStyle(color: _currentReadOnly ? _textSecondary : _textPrimary, fontSize: 15),
-                            decoration: InputDecoration(
-                                hintText: 'Pilih Tanggal Masuk',
-                                hintStyle: TextStyle(color: _textSecondary.withOpacity(0.5), fontSize: 14),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                fillColor: _currentReadOnly ? _bgColor : _cardColor,
-                                filled: true,
-                                suffixIcon: Icon(Icons.calendar_today_outlined, size: 18, color: _textSecondary),
-                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor, width: 1)),
-                                disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor.withOpacity(0.6), width: 1)),
-                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _accentColor, width: 1.5)),
-                                errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red.shade400, width: 1)),
-                                focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red.shade400, width: 1.5)),
-                            ),
-                        ),
-                    ],
-                ),
-            ],
-        );
-    }
-
-    // ==========================================
-    // SECTION 3 - KONTAK DARURAT
-    // ==========================================
-    Widget _buildKontakDaruratSection() {
-        return _buildAccordionCard(
-            title: 'Kontak Darurat',
-            initiallyExpanded: false,
-            icon: Icons.contact_emergency_outlined,
-            children: [
-                _buildTextField(
-                    controller: _namaPjController,
-                    label: 'Nama',
-                    hint: 'Nama Penanggung Jawab',
-                    isMandatory: false,
-                ),
-                const SizedBox(height: 16),
-                _buildDropdownField(
-                    label: 'Hubungan',
-                    hint: '-- Pilih Hubungan --',
-                    value: _selectedHubungan,
-                    items: _daftarHubungan,
-                    isMandatory: false,
-                    onChanged: (val) => setState(() => _selectedHubungan = val),
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                    controller: _waPjController,
-                    label: 'WhatsApp',
-                    hint: 'Nomor WhatsApp Penanggung Jawab',
-                    isMandatory: false,
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                ),
-            ],
-        );
-    }
-
-    // ==========================================
-    // SECTION 4 - IDENTITAS
-    // ==========================================
-    Widget _buildIdentitasSection() {
-        return _buildAccordionCard(
-            title: 'Identitas',
-            initiallyExpanded: false,
-            icon: Icons.badge_outlined,
-            children: [
-                Text('Foto KTP/SIM', style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 8),
-                if (!_hasIdPhoto) ...[
-                    GestureDetector(
-                        onTap: _simulateIdPhotoSelection,
-                        child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-                            decoration: BoxDecoration(
-                                color: _bgColor,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: _borderColor, width: 1, style: BorderStyle.solid),
-                            ),
-                            child: Column(
-                                children: [
-                                    Icon(Icons.cloud_upload_outlined, size: 36, color: _accentColor.withOpacity(0.8)),
-                                    const SizedBox(height: 10),
-                                    Text('Belum Ada Dokumen Terunggah', style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 4),
-                                    Text(_currentReadOnly ? 'Tidak ada lampiran foto identitas' : 'Ketuk area ini untuk mengunggah foto KTP/SIM', textAlign: TextAlign.center, style: TextStyle(color: _textSecondary, fontSize: 12)),
-                                ],
-                            ),
-                        ),
-                    ),
-                ] else ...[
-                    Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                            color: _bgColor,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: _borderColor),
-                        ),
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                                Container(
-                                    height: 160,
-                                    decoration: BoxDecoration(color: _borderColor.withOpacity(0.4), borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
-                                    child: Center(
-                                        child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
+                                Expanded(
+                                    child: Form(
+                                        key: _formKey,
+                                        child: ListView(
+                                            padding: const EdgeInsets.all(24),
+                                            physics: const BouncingScrollPhysics(),
                                             children: [
-                                                Icon(Icons.image, color: _textSecondary, size: 24),
-                                                const SizedBox(width: 8),
-                                                Text('Preview_Identitas_Penyewa.jpg', style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
+                                                _buildCardWrapper(
+                                                    child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                            const Text('Informasi Penghuni', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                            const SizedBox(height: 16),
+                                                            _buildTextField(
+                                                                controller: _namaController,
+                                                                label: 'Nama Lengkap Penghuni',
+                                                                hint: 'Masukkan nama sesuai KTP',
+                                                                isMandatory: true,
+                                                                validator: (val) => val == null || val.trim().isEmpty ? 'Nama lengkap wajib diisi' : null,
+                                                            ),
+                                                            const SizedBox(height: 16),
+                                                            _buildTextField(
+                                                                controller: _waController,
+                                                                label: 'Nomor WhatsApp Aktif',
+                                                                hint: 'Contoh: 0812xxxxxxxx',
+                                                                isMandatory: true,
+                                                                keyboardType: TextInputType.phone,
+                                                                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                                                validator: (val) => val == null || val.trim().isEmpty ? 'Nomor WhatsApp wajib diisi' : null,
+                                                            ),
+                                                        ],
+                                                    ),
+                                                ),
+                                                const SizedBox(height: 16),
+
+                                                _buildCardWrapper(
+                                                    child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                            const Text('Hunian Properti', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                            const SizedBox(height: 16),
+                                                            _buildDropdownField(
+                                                                label: 'Alokasi Unit Kamar',
+                                                                hint: 'Pilih unit kamar',
+                                                                value: _selectedKamarId,
+                                                                items: _liveRoomsFromFirebase,
+                                                                isMandatory: true,
+                                                                validator: (val) => val == null ? 'Kamar wajib dipilih' : null,
+                                                                onChanged: (val) {
+                                                                    setState(() {
+                                                                        _selectedKamarId = val;
+                                                                        _selectedKamarName = _liveRoomsFromFirebase.firstWhere((r) => r['room_id'] == val)['room_name'];
+                                                                    });
+                                                                },
+                                                            ),
+                                                            const SizedBox(height: 16),
+                                                            _buildTanggalMasukField(),
+                                                        ],
+                                                    ),
+                                                ),
+                                                const SizedBox(height: 16),
+
+                                                _buildCardWrapper(
+                                                    child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                            const Text('Kontak Darurat Penanggung Jawab', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                            const SizedBox(height: 16),
+                                                            _buildTextField(
+                                                                controller: _namaPjController,
+                                                                label: 'Nama Lengkap Wali',
+                                                                hint: 'Nama penanggung jawab',
+                                                                isMandatory: false,
+                                                            ),
+                                                            const SizedBox(height: 16),
+                                                            _buildSimpleDropdownField(
+                                                                label: 'Hubungan Kekerabatan',
+                                                                hint: 'Pilih hubungan kekerabatan',
+                                                                value: _selectedHubungan,
+                                                                items: _daftarHubungan,
+                                                                isMandatory: false,
+                                                                onChanged: (val) => setState(() => _selectedHubungan = val),
+                                                            ),
+                                                            const SizedBox(height: 16),
+                                                            _buildTextField(
+                                                                controller: _waPjController,
+                                                                label: 'Nomor WhatsApp Wali',
+                                                                hint: 'Nomor WhatsApp penanggung jawab',
+                                                                isMandatory: false,
+                                                                keyboardType: TextInputType.phone,
+                                                                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                                            ),
+                                                        ],
+                                                    ),
+                                                ),
+                                                const SizedBox(height: 16),
+
+                                                _buildCardWrapper(
+                                                    child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                            const Text('Dokumen Lampiran Resmi (Opsional)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                            const SizedBox(height: 14),
+                                                            _buildIdentitasUploadContent(),
+                                                        ],
+                                                    ),
+                                                ),
+                                                const SizedBox(height: 16),
+
+                                                _buildCardWrapper(
+                                                    child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                            const Text('Informasi Tambahan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                                            const SizedBox(height: 16),
+                                                            _buildTextField(
+                                                                controller: _alamatAsalController,
+                                                                label: 'Alamat Asal KTP',
+                                                                hint: 'Masukkan alamat lengkap sesuai KTP',
+                                                                isMandatory: false,
+                                                            ),
+                                                            const SizedBox(height: 16),
+                                                            _buildTextField(
+                                                                controller: _catatanController,
+                                                                label: 'Catatan Keterangan Internal',
+                                                                hint: 'Tambahkan catatan khusus mengenai penyewa ini...',
+                                                                isMandatory: false,
+                                                            ),
+                                                        ],
+                                                    ),
+                                                ),
                                             ],
                                         ),
                                     ),
                                 ),
-                                Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
-                                        children: [
-                                            TextButton.icon(
-                                                onPressed: () { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Membuka detail foto (Simulasi)'))); },
-                                                icon: const Icon(Icons.visibility_outlined, size: 18),
-                                                label: const Text('Lihat Foto'),
-                                                style: TextButton.styleFrom(foregroundColor: _textPrimary),
-                                            ),
-                                            if (!_currentReadOnly) ...[
-                                                const SizedBox(width: 8),
-                                                TextButton.icon(
-                                                    onPressed: _simulateIdPhotoSelection,
-                                                    icon: const Icon(Icons.edit_outlined, size: 18),
-                                                    label: const Text('Ganti Foto'),
-                                                    style: TextButton.styleFrom(foregroundColor: _accentColor),
-                                                ),
-                                            ],
-                                        ],
-                                    ),
-                                )
+                                _buildStickyFooter(),
                             ],
-                        ),
-                    ),
-                ],
-            ],
+                        );
+                    },
+                ),
+            ),
         );
     }
 
-    // ==========================================
-    // SECTION 5 - INFORMASI TAMBAHAN
-    // ==========================================
-    Widget _buildInformasiTambahanSection() {
-        return _buildAccordionCard(
-            title: 'Informasi Tambahan',
-            initiallyExpanded: false,
-            icon: Icons.info_outline_rounded,
-            children: [
-                _buildTextField(
-                    controller: _alamatAsalController,
-                    label: 'Alamat Asal',
-                    hint: 'Masukkan alamat asal sesuai KTP',
-                    isMandatory: false,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                    controller: _catatanController,
-                    label: 'Catatan Internal',
-                    hint: 'Tambahkan catatan khusus mengenai penyewa ini...',
-                    isMandatory: false,
-                ),
-            ],
-        );
-    }
-
-    // ==========================================
-    // UTILS & CORE FIELD COMPONENTS
-    // ==========================================
-    Widget _buildAccordionCard({required String title, required bool initiallyExpanded, required IconData icon, required List<Widget> children}) {
+    Widget _buildCardWrapper({required Widget child}) {
         return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20.0),
             decoration: BoxDecoration(
-                color: _cardColor,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _borderColor, width: 1),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.015), blurRadius: 10, offset: const Offset(0, 4))],
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20.0),
+                border: Border.all(color: _borderSlateLight, width: 1),
             ),
-            child: Theme(
-                data: Theme.of(context).copyWith(dividerColor: Colors.transparent, splashColor: Colors.transparent, highlightColor: Colors.transparent),
-                child: ExpansionTile(
-                    initiallyExpanded: initiallyExpanded,
-                    leading: Icon(icon, color: _accentColor, size: 22),
-                    title: Text(title, style: TextStyle(color: _textPrimary, fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: -0.2)),
-                    iconColor: _textSecondary,
-                    collapsedIconColor: _textSecondary,
-                    childrenPadding: const EdgeInsets.all(20).copyWith(top: 0),
-                    expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: children,
-                ),
-            ),
+            child: child,
         );
+    }
+
+    Widget _buildTanggalMasukField() {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+                Row(
+                    children: [
+                        Text('Tanggal Resmi Masuk Kos', style: TextStyle(color: _textSlateMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                    controller: _tanggalMasukController,
+                    readOnly: true,
+                    onTap: _selectTanggalMasuk,
+                    validator: (val) => val == null || val.isEmpty ? 'Tanggal masuk wajib diisi' : null,
+                    style: TextStyle(color: _currentReadOnly ? _textSlateMuted : _textSlatePrimary, fontSize: 15),
+                    decoration: InputDecoration(
+                        hintText: 'Pilih tanggal masuk',
+                        hintStyle: TextStyle(color: _textSlateMuted.withOpacity(0.5), fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        fillColor: _currentReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
+                        filled: true,
+                        suffixIcon: Icon(Icons.calendar_today_rounded, size: 16, color: _tealPrimary),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight, width: 1)),
+                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight.withOpacity(0.6), width: 1)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _tealPrimary, width: 1.5)),
+                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
+                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
+                    ),
+                ),
+            ],
+        );
+    }
+
+    Widget _buildIdentitasUploadContent() {
+        if (_imageFile == null) {
+            return GestureDetector(
+                onTap: _showImageSourceBottomSheet,
+                child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _borderSlateLight, width: 1),
+                    ),
+                    child: Column(
+                        children: [
+                            Icon(Icons.cloud_upload_outlined, size: 32, color: _tealPrimary),
+                            const SizedBox(height: 8),
+                            Text('Belum ada dokumen terunggah', style: TextStyle(color: _textSlatePrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text(_currentReadOnly ? 'Tidak ada lampiran dokumen identitas' : 'Ketuk di sini untuk ambil foto KTP dari Kamera/Galeri', textAlign: TextAlign.center, style: TextStyle(color: _textSlateMuted, fontSize: 12)),
+                        ],
+                    ),
+                ),
+            );
+        } else {
+            return Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _borderSlateLight),
+                ),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                        Container(
+                            height: 160,
+                            padding: const EdgeInsets.all(8),
+                            // KOREKSI AMAN: Kondisional rendering lintas platform (Web Blob URL vs APK Android File Path)
+                            child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: kIsWeb 
+                                    ? Image.network(
+                                        _imageFile!.path,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Image.file(
+                                        _imageFile!,
+                                        fit: BoxFit.cover,
+                                      ),
+                            ),
+                        ),
+                        if (!_currentReadOnly)
+                            GestureDetector(
+                                onTap: _showImageSourceBottomSheet,
+                                child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+                                        border: Border(top: BorderSide(color: _borderSlateLight)),
+                                    ),
+                                    child: Text('Ganti Lampiran Berkas KTP', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _tealPrimary)),
+                                ),
+                            ),
+                    ],
+                ),
+            );
+        }
     }
 
     Widget _buildTextField({required TextEditingController controller, required String label, required String hint, required bool isMandatory, TextInputType keyboardType = TextInputType.text, List<TextInputFormatter>? inputFormatters, String? Function(String?)? validator}) {
@@ -492,8 +595,8 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
             children: [
                 Row(
                     children: [
-                        Text(label, style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                        if (isMandatory) Text(' *', style: TextStyle(color: Colors.red.shade400, fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text(label, style: TextStyle(color: _textSlateMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                        if (isMandatory) Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                 ),
                 const SizedBox(height: 6),
@@ -503,33 +606,75 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
                     keyboardType: keyboardType,
                     inputFormatters: inputFormatters,
                     validator: validator,
-                    style: TextStyle(color: _currentReadOnly ? _textSecondary : _textPrimary, fontSize: 15),
-                    cursorColor: _accentColor,
+                    style: TextStyle(color: _currentReadOnly ? _textSlateMuted : _textSlatePrimary, fontSize: 15),
+                    cursorColor: _tealPrimary,
                     decoration: InputDecoration(
                         hintText: hint,
-                        hintStyle: TextStyle(color: _textSecondary.withOpacity(0.5), fontSize: 14),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        fillColor: _currentReadOnly ? _bgColor : _cardColor,
+                        hintStyle: TextStyle(color: _textSlateMuted.withOpacity(0.5), fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        fillColor: _currentReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
                         filled: true,
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor, width: 1)),
-                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor.withOpacity(0.6), width: 1)),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _accentColor, width: 1.5)),
-                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red.shade400, width: 1)),
-                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red.shade400, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight, width: 1)),
+                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight.withOpacity(0.6), width: 1)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _tealPrimary, width: 1.5)),
+                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
+                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
                     ),
                 ),
             ],
         );
     }
 
-    Widget _buildDropdownField({required String label, required String hint, required String? value, required List<String> items, required bool isMandatory, String? Function(String?)? validator, required void Function(String?) onChanged}) {
+    Widget _buildDropdownField({required String label, required String hint, required String? value, required List<Map<String, dynamic>> items, required bool isMandatory, String? Function(String?)? validator, required void Function(String?) onChanged}) {
         return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
                 Row(
                     children: [
-                        Text(label, style: TextStyle(color: _textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
-                        if (isMandatory) Text(' *', style: TextStyle(color: Colors.red.shade400, fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text(label, style: TextStyle(color: _textSlateMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                        if (isMandatory) Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                    value: value,
+                    items: items.map((Map<String, dynamic> room) {
+                        final String name = room['room_name'].toString();
+                        return DropdownMenuItem<String>(
+                            value: room['room_id'].toString(),
+                            child: Text(name.startsWith('Kamar') ? name : 'Kamar $name', style: TextStyle(color: _textSlatePrimary, fontSize: 15)),
+                        );
+                    }).toList(),
+                    onChanged: _currentReadOnly ? null : onChanged,
+                    validator: validator,
+                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: _textSlateMuted, size: 20),
+                    dropdownColor: Colors.white,
+                    style: TextStyle(color: _textSlatePrimary, fontSize: 15),
+                    decoration: InputDecoration(
+                        hintText: hint,
+                        hintStyle: TextStyle(color: _textSlateMuted.withOpacity(0.6), fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        fillColor: _currentReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
+                        filled: true,
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight, width: 1)),
+                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight.withOpacity(0.6), width: 1)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _tealPrimary, width: 1.5)),
+                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
+                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
+                    ),
+                ),
+            ],
+        );
+    }
+
+    Widget _buildSimpleDropdownField({required String label, required String hint, required String? value, required List<String> items, required bool isMandatory, String? Function(String?)? validator, required void Function(String?) onChanged}) {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+                Row(
+                    children: [
+                        Text(label, style: TextStyle(color: _textSlateMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                        if (isMandatory) Text(' *', style: TextStyle(color: _errorColor, fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                 ),
                 const SizedBox(height: 6),
@@ -538,25 +683,25 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
                     items: items.map((String item) {
                         return DropdownMenuItem<String>(
                             value: item,
-                            child: Text(item, style: TextStyle(color: _textPrimary, fontSize: 15)),
+                            child: Text(item, style: TextStyle(color: _textSlatePrimary, fontSize: 15)),
                         );
                     }).toList(),
                     onChanged: _currentReadOnly ? null : onChanged,
                     validator: validator,
-                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: _textSecondary, size: 20),
-                    dropdownColor: _cardColor,
-                    style: TextStyle(color: _textPrimary, fontSize: 15),
+                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: _textSlateMuted, size: 20),
+                    dropdownColor: Colors.white,
+                    style: TextStyle(color: _textSlatePrimary, fontSize: 15),
                     decoration: InputDecoration(
                         hintText: hint,
-                        hintStyle: TextStyle(color: _textSecondary.withOpacity(0.6), fontSize: 14),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        fillColor: _currentReadOnly ? _bgColor : _cardColor,
+                        hintStyle: TextStyle(color: _textSlateMuted.withOpacity(0.6), fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        fillColor: _currentReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
                         filled: true,
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor, width: 1)),
-                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderColor.withOpacity(0.6), width: 1)),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _accentColor, width: 1.5)),
-                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red.shade400, width: 1)),
-                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red.shade400, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight, width: 1)),
+                        disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _borderSlateLight.withOpacity(0.6), width: 1)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _tealPrimary, width: 1.5)),
+                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1)),
+                        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _errorColor, width: 1.5)),
                     ),
                 ),
             ],
@@ -565,10 +710,10 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
 
     Widget _buildStickyFooter() {
         return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-                color: _cardColor,
-                border: Border(top: BorderSide(color: _borderColor, width: 1)),
+                color: Colors.white,
+                border: Border(top: BorderSide(color: _borderSlateLight, width: 1)),
             ),
             child: Row(
                 children: [
@@ -576,28 +721,28 @@ class _DetailPenyewaPageState extends State<DetailPenyewaPage> {
                         child: OutlinedButton(
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                side: BorderSide(color: _borderColor),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                backgroundColor: _cardColor,
-                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                side: BorderSide(color: _borderSlateLight),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                backgroundColor: Colors.white,
                             ),
-                            child: Text(_currentReadOnly ? 'Kembali' : 'Batal', style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                            child: Text(_currentReadOnly ? 'Kembali' : 'Batal', style: TextStyle(color: _textSlatePrimary, fontSize: 14, fontWeight: FontWeight.bold)),
                         ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                         child: ElevatedButton(
-                            onPressed: _handlePrimaryButtonAction,
+                            onPressed: _isLoading ? null : _handlePrimaryButtonAction,
                             style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                backgroundColor: _accentColor,
-                                foregroundColor: _cardColor,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                backgroundColor: _tealPrimary,
+                                foregroundColor: Colors.white,
                                 elevation: 0,
-                                shadowColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
-                            child: Text(_currentReadOnly ? 'Edit Data' : 'Simpan Data', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                            child: _isLoading
+                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : Text(_currentReadOnly ? 'Edit Data' : 'Simpan Data', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                         ),
                     ),
                 ],

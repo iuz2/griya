@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'sub-pages/detail_kamar_page.dart';
 import 'sub-pages/setup_kamar_page.dart';
 
@@ -11,40 +13,10 @@ class KamarPage extends StatefulWidget {
 
 class _KamarPageState extends State<KamarPage> {
     final TextEditingController _searchController = TextEditingController();
+    final String _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     
     String _selectedFilter = 'Semua';
     String _searchQuery = '';
-
-    final List<Map<String, dynamic>> _allKamar = [
-        {'nomor': 'Kamar 101', 'status': 'Terisi', 'penghuni': 'Budi Santoso', 'harga': 'Rp 450.000 / bulan', 'info': 'Masuk: 15 Jan 2024'},
-        {'nomor': 'Kamar 102', 'status': 'Kosong', 'penghuni': '-', 'harga': 'Rp 400.000 / bulan', 'info': 'Siap diisi'},
-        {'nomor': 'Kamar 103', 'status': 'Bermasalah', 'penghuni': 'Rina Kusuma', 'harga': 'Rp 450.000 / bulan', 'info': 'Tunggakan: 2 bulan'},
-        {'nomor': 'Kamar 104', 'status': 'Terisi', 'penghuni': 'Ahmad Fauzi', 'harga': 'Rp 500.000 / bulan', 'info': 'Masuk: 01 Feb 2024'},
-        {'nomor': 'Kamar 105', 'status': 'Kosong', 'penghuni': '-', 'harga': 'Rp 400.000 / bulan', 'info': 'Siap diisi'},
-    ];
-
-    int get _totalKamar => _allKamar.length;
-    int get _terisiKamar => _allKamar.where((k) => k['status'] == 'Terisi' || k['status'] == 'Bermasalah').length;
-    int get _kosongKamar => _allKamar.where((k) => k['status'] == 'Kosong').length;
-
-    List<Map<String, dynamic>> get _filteredKamar {
-        return _allKamar.where((kamar) {
-            final matchesSearch = kamar['nomor'].toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                kamar['penghuni'].toLowerCase().contains(_searchQuery.toLowerCase());
-            
-            if (_selectedFilter == 'Semua') {
-                return matchesSearch;
-            } else if (_selectedFilter == 'Terisi') {
-                return matchesSearch && (kamar['status'] == 'Terisi' || kamar['status'] == 'Bermasalah');
-            } else if (_selectedFilter == 'Belum Bayar') {
-                return matchesSearch &&
-                    kamar['status'] == 'Bermasalah';
-            }
-
-            return matchesSearch &&
-                kamar['status'] == _selectedFilter;
-        }).toList();
-    }
 
     @override
     void dispose() {
@@ -54,224 +26,232 @@ class _KamarPageState extends State<KamarPage> {
 
     @override
     Widget build(BuildContext context) {
+        final Query roomQuery = FirebaseDatabase.instance
+            .ref()
+            .child('users_data/$_currentUid/rooms');
+
         return Scaffold(
-            backgroundColor: const Color(0xFFF8F9FA),
+            backgroundColor: const Color(0xFFECEFF1), 
             body: SafeArea(
-                child: CustomScrollView(
-                    slivers: [
-                        _buildSliverAppBar(),
-                        SliverPersistentHeader(
-                            pinned: false,
-                            delegate: _StatistikDelegate(
-                                total: _totalKamar,
-                                terisi: _terisiKamar,
-                                kosong: _kosongKamar,
-                            ),
-                        ),
-                        SliverPersistentHeader(
-                            pinned: true,
-                            delegate: _PinnedHeaderDelegate(
-                                height: 112.0,
-                                child: Column(
-                                    children: [
-                                        const SizedBox(height: 8),
-                                        _buildSearchFilterSection(),
-                                        _buildFilterChips(),
-                                    ],
+                child: StreamBuilder<DatabaseEvent>(
+                    stream: roomQuery.onValue,
+                    builder: (context, snapshot) {
+                        List<Map<String, dynamic>> allKamarRaw = [];
+
+                        if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
+                            final Map<dynamic, dynamic> roomsMap = 
+                                snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+                            
+                            roomsMap.forEach((key, val) {
+                                final Map<dynamic, dynamic> roomData = val as Map<dynamic, dynamic>;
+                                
+                                String statusMap = 'Kosong';
+                                if (roomData['availability_status'] == 'occupied') {
+                                    statusMap = (roomData['has_pending'] == true) ? 'Bermasalah' : 'Terisi';
+                                }
+
+                                allKamarRaw.add({
+                                    'id': roomData['room_id']?.toString() ?? key.toString(),
+                                    'nomor': roomData['room_name']?.toString() ?? 'Tanpa Nama',
+                                    'status': statusMap,
+                                    'penghuni': roomData['availability_status'] == 'occupied' ? 'Aktif' : '-',
+                                    'harga_raw': roomData['price'] ?? 0,
+                                    'harga': 'Rp ${roomData['price'] ?? 0} / bulan',
+                                    'info': roomData['room_type']?.toString() ?? 'Standard',
+                                });
+                            });
+
+                            allKamarRaw.sort((a, b) => a['nomor'].compareTo(b['nomor']));
+                        }
+
+                        final int totalKamar = allKamarRaw.length;
+                        final int terisiKamar = allKamarRaw.where((k) => k['status'] == 'Terisi' || k['status'] == 'Bermasalah').length;
+                        final int kosongKamar = allKamarRaw.where((k) => k['status'] == 'Kosong').length;
+
+                        final List<Map<String, dynamic>> filteredKamar = allKamarRaw.where((kamar) {
+                            final matchesSearch = kamar['nomor'].toLowerCase().contains(_searchQuery.toLowerCase());
+                            
+                            if (_selectedFilter == 'Semua') {
+                                return matchesSearch;
+                            } else if (_selectedFilter == 'Terisi') {
+                                return matchesSearch && (kamar['status'] == 'Terisi' || kamar['status'] == 'Bermasalah');
+                            } else if (_selectedFilter == 'Belum Bayar') {
+                                return matchesSearch && kamar['status'] == 'Bermasalah';
+                            }
+                            return matchesSearch && kamar['status'] == _selectedFilter;
+                        }).toList();
+
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator(color: Color(0xFF0F766E)));
+                        }
+
+                        return CustomScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            slivers: [
+                                SliverAppBar(
+                                    backgroundColor: Colors.white,
+                                    elevation: 0,
+                                    scrolledUnderElevation: 0,
+                                    pinned: false, 
+                                    title: const Text(
+                                        'Manajemen Kamar',
+                                        style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold),
+                                    ),
+                                    centerTitle: true,
                                 ),
-                            ),
-                        ),
-                        _filteredKamar.isEmpty 
-                            ? SliverFillRemaining(child: _buildEmptyState())
-                            : SliverPadding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                sliver: SliverList(
-                                    delegate: SliverChildBuilderDelegate(
-                                        (context, index) {
-                                            return _buildKamarCard(_filteredKamar[index]);
-                                        },
-                                        childCount: _filteredKamar.length,
+
+                                SliverToBoxAdapter(
+                                    child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 4.0),
+                                        child: _buildStatistikOverviewCard(totalKamar, terisiKamar, kosongKamar),
                                     ),
                                 ),
-                            ),
-                    ],
+
+                                SliverAppBar(
+                                    backgroundColor: const Color(0xFFECEFF1), 
+                                    elevation: 0,
+                                    scrolledUnderElevation: 0,
+                                    pinned: true, 
+                                    automaticallyImplyLeading: false,
+                                    toolbarHeight: 124, 
+                                    title: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                        child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                                _buildSearchSection(),
+                                                const SizedBox(height: 14),
+                                                _buildFilterChipsRow(),
+                                            ],
+                                        ),
+                                    ),
+                                ),
+
+                                filteredKamar.isEmpty 
+                                    ? SliverToBoxAdapter(child: _buildEmptyState())
+                                    : SliverPadding(
+                                        padding: const EdgeInsets.fromLTRB(20.0, 4.0, 20.0, 80.0),
+                                        sliver: SliverList(
+                                            delegate: SliverChildBuilderDelegate(
+                                                (context, index) {
+                                                    return _buildKamarCard(filteredKamar[index]);
+                                                },
+                                                childCount: filteredKamar.length,
+                                            ),
+                                        ),
+                                    ),
+                            ],
+                        );
+                    },
                 ),
             ),
             floatingActionButton: _buildFAB(),
         );
     }
-
-    Widget _buildSliverAppBar() {
-        return SliverAppBar(
-            backgroundColor: const Color(0xFFFFFFFF),
-            elevation: 0,
-            scrolledUnderElevation: 0,
-            pinned: true,
-            title: const Text(
-                'Manajemen Kamar',
-                style: TextStyle(
-                    color: Color(0xFF202124),
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                ),
+    
+    Widget _buildStatistikOverviewCard(int total, int terisi, int kosong) {
+        return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24.0), 
+            decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24.0), 
+                border: Border.all(color: const Color(0xFFCFD8DC), width: 1.2),
             ),
-            actions: [
-                IconButton(
-                    icon: const Icon(Icons.refresh, color: Color(0xFF5F6368)),
-                    onPressed: () {
-                        setState(() {});
-                    },
-                ),
-                IconButton(
-                    icon: const Icon(Icons.more_vert, color: Color(0xFF5F6368)),
-                    onPressed: () {},
-                ),
-            ],
-            bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(color: const Color(0xFFE8EAED), height: 1),
-            ),
-        );
-    }
-
-    Widget _buildSearchFilterSection() {
-        return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
                 children: [
-                    Expanded(
-                        child: Container(
-                            height: 48,
-                            decoration: BoxDecoration(
-                                color: const Color(0xFFFFFFFF),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFE8EAED)),
-                            ),
-                            child: TextField(
-                                controller: _searchController,
-                                onChanged: (value) {
-                                    setState(() {
-                                        _searchQuery = value;
-                                    });
-                                },
-                                decoration: InputDecoration(
-                                    hintText: 'Cari kamar, nama...',
-                                    hintStyle: const TextStyle(color: Color(0xFF5F7A90), fontSize: 14),
-                                    prefixIcon: const Icon(Icons.search, color: Color(0xFF5F7A90), size: 20),
-                                    suffixIcon: _searchQuery.isNotEmpty
-                                        ? IconButton(
-                                                icon: const Icon(Icons.clear, color: Color(0xFF5F7A90), size: 20),
-                                                onPressed: () {
-                                                    _searchController.clear();
-                                                    setState(() {
-                                                        _searchQuery = '';
-                                                    });
-                                                },
-                                            )
-                                        : null,
-                                    border: InputBorder.none,
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                                ),
-                            ),
-                        ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                        height: 48,
-                        width: 48,
-                        decoration: BoxDecoration(
-                            color: const Color(0xFFFFFFFF),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFE8EAED)),
-                        ),
-                        child: IconButton(
-                            icon: const Icon(Icons.tune, color: Color(0xFF202124), size: 20),
-                            onPressed: () {},
-                        ),
-                    ),
+                    _buildStatItem('Total Unit', total.toString(), const Color(0xFF1E293B)),
+                    _buildStatDivider(),
+                    _buildStatItem('Terisi', terisi.toString(), const Color(0xFF0F766E)),
+                    _buildStatDivider(),
+                    _buildStatItem('Kosong', kosong.toString(), const Color(0xFF64748B)),
                 ],
             ),
         );
     }
 
-    Widget _buildFilterChips() {
-        final filters = [
-           'Semua',
-           'Terisi',
-           'Kosong',
-           'Belum Bayar'
-        ];
+    Widget _buildStatItem(String label, String value, Color color) {
+        return Expanded(
+            child: Column(
+                children: [
+                    Text(value, style: TextStyle(fontSize: 26, fontWeight: FontWeight.w500, color: color)),
+                    const SizedBox(height: 4),
+                    Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w400)),
+                ],
+            ),
+        );
+    }
+
+    Widget _buildStatDivider() {
+        return Container(height: 32, width: 1, color: const Color(0xFFCFD8DC));
+    }
+
+    Widget _buildSearchSection() {
         return Container(
-            height: 40,
-            margin: const EdgeInsets.symmetric(vertical: 8),
+            height: 54, 
+            decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFCFD8DC), width: 1.2),
+            ),
+            child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                style: const TextStyle(fontSize: 16, color: Color(0xFF0F172A), fontWeight: FontWeight.w400),
+                decoration: InputDecoration(
+                    hintText: 'Cari nomor kamar kos...',
+                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 15),
+                    prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF64748B), size: 22),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                                icon: const Icon(Icons.cancel_rounded, color: Color(0xFF64748B), size: 20),
+                                onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                },
+                            )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+            ),
+        );
+    }
+
+    Widget _buildFilterChipsRow() {
+        final filters = ['Semua', 'Terisi', 'Kosong', 'Belum Bayar'];
+        return SizedBox(
+            height: 42, 
             child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: filters.length,
                 itemBuilder: (context, index) {
                     final filter = filters[index];
                     final isActive = _selectedFilter == filter;
                     return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                            label: Text(filter),
-                            selected: isActive,
-                            onSelected: (selected) {
-                                if (selected) {
-                                    setState(() {
-                                        _selectedFilter = filter;
-                                    });
-                                }
-                            },
-                            selectedColor: const Color(0xFF1A73E8).withOpacity(0.15),
-                            backgroundColor: const Color(0xFFFFFFFF),
-                            labelStyle: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: isActive ? const Color(0xFF1A73E8) : const Color(0xFF5F7A90),
-                            ),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                                side: BorderSide(
-                                    color: isActive ? const Color(0xFF1A73E8) : const Color(0xFFE8EAED),
+                        padding: const EdgeInsets.only(right: 10),
+                        child: InkWell(
+                            onTap: () => setState(() => _selectedFilter = filter),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                                decoration: BoxDecoration(
+                                    color: isActive ? const Color(0xFF0F766E) : Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: isActive ? const Color(0xFF0F766E) : const Color(0xFFCFD8DC), width: 1.2),
+                                ),
+                                child: Text(
+                                    filter,
+                                    style: TextStyle(
+                                        fontSize: 14, 
+                                        fontWeight: isActive ? FontWeight.bold : FontWeight.w400, 
+                                        color: isActive ? Colors.white : const Color(0xFF475569),
+                                    ),
                                 ),
                             ),
-                            showCheckmark: false,
                         ),
                     );
                 },
-            ),
-        );
-    }
-
-    Widget _buildEmptyState() {
-        return Center(
-            child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                    const Icon(Icons.home_work_outlined, size: 64, color: Color(0xFF9CA3AF)),
-                    const SizedBox(height: 16),
-                    const Text(
-                        'Tidak Ada Data!',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF202124)),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                        'Tidak ditemukan data yang sesuai dengan pencarian atau filter. ',
-                        style: TextStyle(fontSize: 14, color: Color(0xFF5F7A90)),
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton(
-                        onPressed: () {
-                            setState(() {
-                                _selectedFilter = 'Semua';
-                                _searchController.clear();
-                                _searchQuery = '';
-                            });
-                        },
-                        child: const Text('Kembali ke semua kamar', style: TextStyle(color: Color(0xFF1A73E8))),
-                    )
-                ],
             ),
         );
     }
@@ -283,138 +263,110 @@ class _KamarPageState extends State<KamarPage> {
 
         switch (kamar['status']) {
             case 'Terisi':
-                badgeBgColor = const Color(0xFF34A853).withOpacity(0.15);
-                badgeTextColor = const Color(0xFF34A853);
+                badgeBgColor = const Color(0xFFCCFBF1);
+                badgeTextColor = const Color(0xFF115E59);
                 break;
             case 'Kosong':
-                badgeBgColor = const Color(0xFF1A73E8).withOpacity(0.15);
-                badgeTextColor = const Color(0xFF1A73E8);
+                badgeBgColor = const Color(0xFFF1F5F9);
+                badgeTextColor = const Color(0xFF475569);
                 break;
             case 'Bermasalah':
-                badgeBgColor = const Color(0xFFEA4335).withOpacity(0.15);
-                badgeTextColor = const Color(0xFFEA4335);
+                badgeBgColor = const Color(0xFFFEE2E2);
+                badgeTextColor = const Color(0xFF991B1B);
                 statusText = 'Belum Bayar';
                 break;
             default:
-                badgeBgColor = const Color(0xFF9CA3AF).withOpacity(0.15);
-                badgeTextColor = const Color(0xFF5F6368);
+                badgeBgColor = const Color(0xFFF1F5F9);
+                badgeTextColor = const Color(0xFF475569);
         }
 
-        // Mapping parameter data lokal agar sinkron dengan kebutuhan parser DetailKamarPage
         final Map<String, dynamic> mappedKamarData = {
-            'nomor_kamar': kamar['nomor']?.toString().replaceAll('Kamar ', '') ?? '-',
+            'room_id': kamar['id'],
+            'nomor_kamar': kamar['nomor'],
             'status': statusText,
-            'nama_penghuni': kamar['penghuni'],
-            'harga_sewa': kamar['harga'],
-            'catatan': kamar['info'],
-            'telepon': kamar['status'] == 'Kosong' ? '-' : '081234567890', // Default fallback value
-            'alamat': kamar['status'] == 'Kosong' ? '-' : 'Yogyakarta', // Default fallback value
-            'tanggal_masuk': kamar['status'] == 'Terisi' ? '15 Jan 2024' : (kamar['status'] == 'Bermasalah' ? '01 Des 2023' : '-'),
-            'jatuh_tempo': kamar['status'] == 'Kosong' ? '-' : '15 tiap bulan',
-            'status_pembayaran': kamar['status'] == 'Bermasalah' ? 'Belum Lunas' : (kamar['status'] == 'Terisi' ? 'Lunas' : '-'),
-            'total_tunggakan': kamar['status'] == 'Bermasalah' ? 'Rp 900.000' : '0',
+            'harga_sewa': kamar['harga_raw'],
+            'room_type': kamar['info'],
         };
 
         return Container(
-            margin: const EdgeInsets.only(bottom: 8),
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(24.0), 
             decoration: BoxDecoration(
-                color: const Color(0xFFFFFFFF),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE8EAED)),
-                boxShadow: const [
-                    BoxShadow(
-                        color: Color(0x0D000000),
-                        blurRadius: 2,
-                        offset: Offset(0, 1),
-                    ),
-                ],
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24), 
+                border: Border.all(color: const Color(0xFFCFD8DC), width: 1.2),
             ),
-            child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => DetailKamarPage(kamar: mappedKamarData),
-                            ),
-                        );
-                    },
-                    onLongPress: () => _showContextMenu(kamar),
-                    child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
+            child: Row(
+                children: [
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start, // KOREKSI SINTAKS MUTLAK: Bertumpuknya penunjuk parameter sudah dibersihkan total
                             children: [
-                                Expanded(
-                                    child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                            Row(
-                                                children: [
-                                                    Text(
-                                                        kamar['nomor'],
-                                                        style: const TextStyle(
-                                                            fontSize: 16,
-                                                            fontWeight: FontWeight.bold,
-                                                            color: Color(0xFF202124),
-                                                        ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                        decoration: BoxDecoration(
-                                                            color: badgeBgColor,
-                                                            borderRadius: BorderRadius.circular(12),
-                                                        ),
-                                                        child: Text(
-                                                            statusText,
-                                                            style: TextStyle(
-                                                                fontSize: 11,
-                                                                fontWeight: FontWeight.bold,
-                                                                color: badgeTextColor,
-                                                            ),
-                                                        ),
-                                                    ),
-                                                ],
+                                Row(
+                                    children: [
+                                        Text(
+                                            'Kamar ${kamar['nomor']}',
+                                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: Color(0xFF0F172A)),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(color: badgeBgColor, borderRadius: BorderRadius.circular(8)),
+                                            child: Text(
+                                                statusText,
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: badgeTextColor),
                                             ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                                kamar['penghuni'],
-                                                style: const TextStyle(
-                                                    fontSize: 14,
-                                                    color: Color(0xFF202124),
-                                                ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                    Text(
-                                                        kamar['harga'],
-                                                        style: const TextStyle(
-                                                            fontSize: 12,
-                                                            color: Color(0xFF5F7A90),
-                                                        ),
-                                                    ),
-                                                    const SizedBox(height: 2),
-                                                    Text(
-                                                        kamar['info'],
-                                                        style: const TextStyle(
-                                                            fontSize: 11,
-                                                            color: Color(0xFF9CA3AF),
-                                                        ),
-                                                    ),
-                                                ],
-                                            ),
-                                        ],
-                                    ),
+                                        ),
+                                    ],
                                 ),
-                                const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
+                                const SizedBox(height: 10),
+                                Text(
+                                    'Tipe: ${kamar['info']}',
+                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w400, color: Color(0xFF1E293B)),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(kamar['harga'], style: const TextStyle(fontSize: 14, color: Color(0xFF64748B), fontWeight: FontWeight.w400)),
                             ],
                         ),
                     ),
-                ),
+                    IconButton(
+                        icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
+                        onPressed: () {
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => DetailKamarPage(kamar: mappedKamarData)),
+                            );
+                        },
+                    ),
+                ],
+            ),
+        );
+    }
+
+    Widget _buildEmptyState() {
+        return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 16),
+            alignment: Alignment.center,
+            child: Column(
+                children: [
+                    const Text('🚪', style: TextStyle(fontSize: 44)),
+                    const SizedBox(height: 12),
+                    const Text('Tidak ada data kamar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Color(0xFF0F172A))),
+                    const SizedBox(height: 4),
+                    const Text('Hasil tidak ditemukan atau data database masih kosong.', style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+                    const SizedBox(height: 12),
+                    TextButton(
+                        onPressed: () {
+                            setState(() {
+                                _selectedFilter = 'Semua';
+                                _searchController.clear();
+                                _searchQuery = '';
+                            });
+                        },
+                        child: const Text('Reset Filter', style: TextStyle(color: Color(0xFF0F766E), fontWeight: FontWeight.bold)),
+                    )
+                ],
             ),
         );
     }
@@ -424,198 +376,13 @@ class _KamarPageState extends State<KamarPage> {
             onPressed: () {
                 Navigator.push(
                     context,
-                    MaterialPageRoute(
-                        builder: (context) => const SetupKamarPage(),
-                    ),
+                    MaterialPageRoute(builder: (context) => const SetupKamarPage()),
                 );
             },
-            backgroundColor: const Color(0xFF1A73E8),
-            elevation: 6,
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text(
-                'Kamar Baru',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                ),
-            ),
+            backgroundColor: const Color(0xFF0F766E),
+            elevation: 2,
+            icon: const Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
+            label: const Text('Kamar Baru', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 15)),
         );
-    }
-
-    void _showContextMenu(Map<String, dynamic> kamar) {
-        showModalBottomSheet(
-            context: context,
-            backgroundColor: const Color(0xFFFFFFFF),
-            builder: (context) {
-                return SafeArea(
-                    child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                            ListTile(
-                                leading: const Icon(Icons.edit, color: Color(0xFF1A73E8)),
-                                title: const Text('Edit Kamar'),
-                                onTap: () => Navigator.pop(context),
-                            ),
-                            ListTile(
-                                leading: const Icon(Icons.phone, color: Color(0xFF34A853)),
-                                title: const Text('Hubungi Penghuni'),
-                                onTap: () => Navigator.pop(context),
-                            ),
-                            ListTile(
-                                leading: const Icon(Icons.delete, color: Color(0xFFEA4335)),
-                                title: const Text('Hapus Kamar', style: TextStyle(color: Color(0xFFEA4335))),
-                                onTap: () {
-                                    Navigator.pop(context);
-                                    _showDeleteConfirmation(kamar);
-                                },
-                            ),
-                        ],
-                    ),
-                );
-            },
-        );
-    }
-
-    void _showDeleteConfirmation(Map<String, dynamic> kamar) {
-        showDialog(
-            context: context,
-            builder: (context) {
-                return AlertDialog(
-                    backgroundColor: const Color(0xFFFFFFFF),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    title: Text('Hapus ${kamar['nomor']}?'),
-                    content: const Text('Apakah Anda yakin ingin menghapus kamar ini? Tindakan ini tidak dapat dibatalkan.'),
-                    actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Batal', style: TextStyle(color: Color(0xFF5F6368))),
-                        ),
-                        ElevatedButton(
-                            onPressed: () {
-                                Navigator.pop(context);
-                            },
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFEA4335),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
-                        ),
-                    ],
-                );
-            },
-        );
-    }
-
-}
-
-class _StatistikDelegate extends SliverPersistentHeaderDelegate {
-    final int total;
-    final int terisi;
-    final int kosong;
-
-    _StatistikDelegate({
-        required this.total,
-        required this.terisi,
-        required this.kosong,
-    });
-
-    @override
-    Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-        double maxOffset = maxExtent - minExtent;
-        double progress = (shrinkOffset / maxOffset).clamp(0.0, 1.0);
-
-        double marginVertical = 16.0 - (16.0 * progress);
-        double opacity = progress > 0.85 ? 0.0 : 1.0;
-
-        return Opacity(
-            opacity: opacity,
-            child: Container(
-                margin: EdgeInsets.fromLTRB(16, marginVertical, 16, marginVertical),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                    color: const Color(0xFFFFFFFF),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE8EAED)),
-                ),
-                child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                        Expanded(child: _buildStatItem('Total', total.toString(), Icons.inventory_2, const Color(0xFF1A73E8), progress)),
-                        Expanded(child: _buildStatItem('Terisi', terisi.toString(), Icons.people, const Color(0xFF34A853), progress)),
-                        Expanded(child: _buildStatItem('Kosong', kosong.toString(), Icons.home, const Color(0xFFFBBC04), progress)),
-                    ],
-                ),
-            ),
-        );
-    }
-
-    Widget _buildStatItem(String label, String value, IconData icon, Color color, double progress) {
-        double currentIconSize = 18.0 - (4.0 * progress);
-        double currentNumberSize = 26.0 - (10.0 * progress);
-        double currentLabelSize = 12.0 - (3.0 * progress);
-        double currentSpacing = 4.0 - (3.0 * progress);
-
-        return Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-                Icon(icon, size: currentIconSize, color: color),
-                SizedBox(height: currentSpacing),
-                AnimatedDefaultTextStyle(
-                    duration: Duration.zero,
-                    style: TextStyle(
-                        fontSize: currentNumberSize, 
-                        fontWeight: FontWeight.bold, 
-                        color: const Color(0xFF202124)
-                    ),
-                    child: Text(value),
-                ),
-                SizedBox(height: currentSpacing),
-                AnimatedDefaultTextStyle(
-                    duration: Duration.zero,
-                    style: TextStyle(
-                        fontSize: currentLabelSize, 
-                        color: const Color(0xFF5F7A90), 
-                        fontWeight: FontWeight.w500
-                    ),
-                    child: Text(label),
-                ),
-            ],
-        );
-    }
-
-    @override
-    double get maxExtent => 148.0; 
-    
-    @override
-    double get minExtent => 50.0;
-
-    @override
-    bool shouldRebuild(covariant _StatistikDelegate oldDelegate) {
-        return total != oldDelegate.total || terisi != oldDelegate.terisi || kosong != oldDelegate.kosong;
-    }
-}
-
-class _PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
-    final Widget child;
-    final double height;
-
-    _PinnedHeaderDelegate({required this.child, required this.height});
-
-    @override
-    Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-        return Container(
-            color: const Color(0xFFF8F9FA),
-            child: child,
-        );
-    }
-
-    @override
-    double get maxExtent => height;
-    @override
-    double get minExtent => height;
-    @override
-    bool shouldRebuild(covariant _PinnedHeaderDelegate oldDelegate) {
-        return true;
     }
 }

@@ -1,11 +1,11 @@
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
     namespace = "com.example.griya"
+    
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,10 +15,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.griya"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -27,8 +24,6 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -42,4 +37,24 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// =================================================================
+// KUNCI MUTLAK: Pencegat aktif agar Gradle tidak bisa mencuri versi baru
+// =================================================================
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "androidx.activity") {
+            useVersion("1.8.0")
+        }
+        if (requested.group == "androidx.core") {
+            useVersion("1.12.0")
+        }
+        if (requested.group == "androidx.navigationevent") {
+            useVersion("1.0.0")
+        }
+        if (requested.group == "androidx.compose.runtime") {
+            useVersion("1.5.0")
+        }
+    }
 }
